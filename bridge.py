@@ -14,7 +14,12 @@ import threading
 import importlib
 import socket
 
-import six
+# from six.py's strategy
+INTEGER_TYPES = None
+try:
+    INTEGER_TYPES = (int, long)
+except NameError: # py3 has no long
+    INTEGER_TYPES = (int,)
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -176,7 +181,7 @@ class Bridge(object):
         # note: this needs to come before int, because apparently bools are instances of int (but not vice versa)
         if isinstance(data, bool):
             serialized_dict = {TYPE: BOOL, VALUE: str(data)}
-        elif isinstance(data, six.integer_types):
+        elif isinstance(data, INTEGER_TYPES):
             serialized_dict = {TYPE: INT, VALUE: str(data)}
         elif isinstance(data, str):
             serialized_dict = {TYPE: STR, VALUE: base64.b64encode(
