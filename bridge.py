@@ -18,8 +18,14 @@ import socket
 INTEGER_TYPES = None
 try:
     INTEGER_TYPES = (int, long)
-except NameError: # py3 has no long
+except NameError:  # py3 has no long
     INTEGER_TYPES = (int,)
+
+STRING_TYPES = None
+try:
+    STRING_TYPES = (str, unicode)
+except NameError:  # py3 has no unicode
+    STRING_TYPES = (str,)
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -27,7 +33,7 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 DEFAULT_HOST = "localhost"
-DEFAULT_SERVER_PORT = 34982
+DEFAULT_SERVER_PORT = 34914
 DEFAULT_CLIENT_PORT = DEFAULT_SERVER_PORT+1
 
 
@@ -62,8 +68,7 @@ RESULT = "result"
 
 HANDLE = "handle"
 NAME = "name"
-CALLABLES = "callables"
-OTHER_ATTRS = "other_attrs"
+ATTRS = "attrs"
 
 KWARGS = "kwargs"
 
@@ -100,22 +105,10 @@ class BridgeHandle(object):
         self.bridge = bridge
         self.handle = str(uuid.uuid4())
         self.local_obj = local_obj
+        self.attrs = dir(local_obj)
 
-        #self.callables = []
-        #self.other_attrs = []
-
-        """for attr_name in dir(local_obj):
-            try:
-                if callable(getattr(local_obj, attr_name)):
-                    self.callables.append(attr_name)
-                else:
-                    self.other_attrs.append(attr_name)
-            except Exception as e:
-                print("Error checking attribute {}: {}".format(attr_name, e))
-        """
-                
     def to_dict(self):
-        return {HANDLE: self.handle, TYPE: type(self.local_obj).__name__} #, CALLABLES: self.callables, OTHER_ATTRS: self.other_attrs}
+        return {HANDLE: self.handle, TYPE: type(self.local_obj).__name__, ATTRS: self.attrs}
 
     def __str__(self):
         return "BridgeHandle({}: {})".format(self.handle, self.local_obj)
@@ -183,7 +176,7 @@ class Bridge(object):
             serialized_dict = {TYPE: BOOL, VALUE: str(data)}
         elif isinstance(data, INTEGER_TYPES):
             serialized_dict = {TYPE: INT, VALUE: str(data)}
-        elif isinstance(data, str):
+        elif isinstance(data, STRING_TYPES):  # all strings are coerced to unicode
             serialized_dict = {TYPE: STR, VALUE: base64.b64encode(
                 data.encode("utf-8")).decode("utf-8")}
         elif isinstance(data, bytes):  # py3 only, bytestring in 2 is str
@@ -222,7 +215,7 @@ class Bridge(object):
         elif serial_dict[TYPE] == BOOL:
             return bool(serial_dict[VALUE])
         elif serial_dict[TYPE] == STR:
-            return base64.b64decode(serial_dict[VALUE])
+            return base64.b64decode(serial_dict[VALUE]).decode("utf-8")
         elif serial_dict[TYPE] == BYTES:
             return base64.b64decode(serial_dict[VALUE])
         elif serial_dict[TYPE] == LIST:
@@ -397,8 +390,7 @@ class BridgedObject(object):
         self._bridge = bridge
         self._bridge_handle = obj_dict[HANDLE]
         self._bridge_type = obj_dict[TYPE]
-        #self._bridge_callables = obj_dict[CALLABLES]
-        #self._bridge_other_attrs = obj_dict[OTHER_ATTRS]
+        self._bridge_attrs = obj_dict[ATTRS]
 
     def __getattribute__(self, attr):
         if attr.startswith(BRIDGE_PREFIX) or attr == "__class__":
@@ -418,10 +410,6 @@ class BridgedObject(object):
 
     def _bridged_set(self, name, value):
         return self._bridge.remote_set(self._bridge_handle, name, value)
-
-    """def _bridged_call(self, name, *args, **kwargs):
-        return self._bridge.remote_call(self._bridge_handle, name, *args, **kwargs)
-    """
 
     def __del__(self):
         self._bridge.remote_del(self._bridge_handle)
