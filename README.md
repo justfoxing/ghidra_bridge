@@ -15,10 +15,10 @@ How to use for Ghidra
 ```
 import ghidra_bridge
 b = ghidra_bridge.GhidraBridge()
-ghidra_flat = b.get_flat_api()
-print(ghidra_flat.getState().getCurrentAddress().getOffset())
+b.get_flat_api(namespace=globals())
+print(getState().getCurrentAddress().getOffset())
 ghidra = b.get_ghidra_api()
-ghidra.program.model.data.DataUtilities.isUndefinedData(ghidra_remote.currentProgram, ghidra_remote.currentAddress)
+ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 
 or
@@ -61,4 +61,5 @@ TODO
 * Packaging - would be nice to do pip install ghidra_bridge for the client-side.
 * Easily enable troubleshooting logging
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
-* Work out how to load the flat api elements as if they'd been imported, so you can use currentAddress/etc directly
+* Examples
+    * Reckon it'd be possible to launch this from Ghidra and invoke a Python 3 environment to talk to, so you can run your Python 3 analysis scripts from Ghidra via the Script Manager/hotkeys.
