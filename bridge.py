@@ -154,7 +154,7 @@ class Bridge(object):
 
         self.handle_dict[bridge_handle.handle] = bridge_handle
 
-        print("Handle created {}".format(bridge_handle.handle))
+        #print("Handle created {}".format(bridge_handle.handle))
 
         return bridge_handle
 
@@ -209,7 +209,7 @@ class Bridge(object):
         return serialized_dict
 
     def deserialize_from_dict(self, serial_dict):
-        print(serial_dict)
+        #print(serial_dict)
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
@@ -296,18 +296,18 @@ class Bridge(object):
         return result
 
     def remote_shutdown(self):
-        print("Asking remote to stop")
+        #print("Asking remote to stop")
         self.send_cmd({CMD: SHUTDOWN})
 
     def remote_get(self, handle, name):
-        print("RGet: {}.{}".format(handle, name))
+        #print("RGet: {}.{}".format(handle, name))
         command_dict = {CMD: GET, ARGS: {HANDLE: handle, NAME: name}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
     def local_get(self, args_dict):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
-        print("LGet: {}.{}".format(handle, name))
+        #print("LGet: {}.{}".format(handle, name))
 
         target = self.get_object_by_handle(handle)
         try:
@@ -319,7 +319,7 @@ class Bridge(object):
         return self.serialize_to_dict(result)
 
     def remote_set(self, handle, name, value):
-        print("RSet: {}.{} = {}".format(handle, name, value))
+        #print("RSet: {}.{} = {}".format(handle, name, value))
         command_dict = {CMD: SET, ARGS: {HANDLE: handle,
                                          NAME: name, VALUE: self.serialize_to_dict(value)}}
         self.deserialize_from_dict(self.send_cmd(command_dict))
@@ -328,7 +328,7 @@ class Bridge(object):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
         value = self.deserialize_from_dict(args_dict[VALUE])
-        print("LSet: {}.{} = {}".format(handle, name, value))
+        #print("LSet: {}.{} = {}".format(handle, name, value))
 
         target = self.get_object_by_handle(handle)
         result = None
@@ -338,12 +338,12 @@ class Bridge(object):
             result = e
             traceback.print_exc()
 
-        print(result)
+        #print(result)
 
         return self.serialize_to_dict(result)
 
     def remote_call(self, handle, *args, **kwargs):
-        print("RCall: {}({},{})".format(handle, args, kwargs))
+        #print("RCall: {}({},{})".format(handle, args, kwargs))
 
         serial_args = self.serialize_to_dict(args)
         serial_kwargs = self.serialize_to_dict(kwargs)
@@ -358,7 +358,7 @@ class Bridge(object):
         args = self.deserialize_from_dict(args_dict[ARGS])
         kwargs = self.deserialize_from_dict(args_dict[KWARGS])
 
-        print("LCall: {}({},{})".format(handle, args, kwargs))
+        #print("LCall: {}({},{})".format(handle, args, kwargs))
         target_callable = self.get_object_by_handle(handle)
         result = target_callable(*args, **kwargs)
         response = self.serialize_to_dict(result)
@@ -371,7 +371,7 @@ class Bridge(object):
 
     def local_del(self, args_dict):
         handle = args_dict[HANDLE]
-        print("LDel {}".format(handle))
+        #print("LDel {}".format(handle))
         self.release_handle(handle)
 
     def remote_import(self, module_name):

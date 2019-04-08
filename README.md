@@ -9,7 +9,7 @@ The aim is to be as transparent as possible, so once you're set up, you shouldn'
 How to use for Ghidra
 ======================
 
-1. Add the directory with the scripts in it to Ghidra's scripts directories.
+1. Add the path to the ghidra_bridge directory as a script directory in the Ghidra Script Manager (the "3 line" button left of the big red "plus" at the top of the Script Manager)
 2. Run ghidra_bridge_server.py from the Ghidra Script Manager
 3. From the client python environment:
 ```
@@ -49,7 +49,7 @@ Design principles
 
 Tested
 =====================
-Tested and working on Ghidra 9.0.1(Jython 2.7.1) <-> Python 3.6.5 on Windows
+Tested and working on Ghidra 9.0.2(Jython 2.7.1) <-> Python 3.6.5 on Windows
 
 TODO
 =====================
