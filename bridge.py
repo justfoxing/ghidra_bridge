@@ -228,8 +228,11 @@ class Bridge(object):
             serialized_dict = {TYPE: DICT, VALUE: [{KEY: self.serialize_to_dict(
                 k), VALUE: self.serialize_to_dict(v)} for k, v in data.items()]}
         elif isinstance(data, Exception):
-            serialized_dict = {TYPE: EXCEPTION, VALUE: self.create_handle(
-                data).to_dict(), MESSAGE: self.serialize_to_dict(getattr(data, "message", ""))}
+            # treat the exception object as an object
+            value = self.create_handle(data).to_dict()
+            # then wrap the exception specifics around it
+            serialized_dict = {TYPE: EXCEPTION, VALUE: value, MESSAGE: self.serialize_to_dict(
+                getattr(data, "message", ""))}
         elif isinstance(data, BridgedObject):
             # passing back a reference to an object on the other side
             # e.g., bridge_obj1.do_thing(bridge_obj2)
@@ -268,7 +271,7 @@ class Bridge(object):
             return result
         elif serial_dict[TYPE] == EXCEPTION:
             raise BridgeException(self.deserialize_from_dict(serial_dict[MESSAGE]), BridgedObject(
-                self, self.deserialize_from_dict(serial_dict[VALUE])))
+                self, serial_dict[VALUE]))
         elif serial_dict[TYPE] == BRIDGED:
             return self.get_object_by_handle(serial_dict[VALUE])
         elif serial_dict[TYPE] == NONE:
@@ -395,8 +398,14 @@ class Bridge(object):
         kwargs = self.deserialize_from_dict(args_dict[KWARGS])
 
         #print("LCall: {}({},{})".format(handle, args, kwargs))
-        target_callable = self.get_object_by_handle(handle)
-        result = target_callable(*args, **kwargs)
+        result = None
+        try:
+            target_callable = self.get_object_by_handle(handle)
+            result = target_callable(*args, **kwargs)
+        except Exception as e:
+            result = e
+            traceback.print_exc()
+
         response = self.serialize_to_dict(result)
         return response
 
