@@ -13,6 +13,7 @@ import uuid
 import threading
 import importlib
 import socket
+import struct
 
 # from six.py's strategy
 INTEGER_TYPES = None
@@ -74,19 +75,54 @@ KWARGS = "kwargs"
 
 BRIDGE_PREFIX = "_bridge"
 
-MAX_CMD_SIZE = 10240
-
 
 class BridgeException(Exception):
     pass
+
+
+SIZE_FORMAT = "!I"
+
+
+def write_size_and_data_to_socket(socket, data):
+    """ Utility function to pack the size in front of data and send it off """
+
+    # pack the size as network-endian
+    size_bytes = struct.pack(SIZE_FORMAT, len(data))
+    # send it all off
+    socket.sendall(size_bytes + data)
+
+
+def read_exactly(socket, num_bytes):
+    """ Utility function to keep reading from the socket until we get the desired number of bytes """
+    data = b''
+    while num_bytes > 0:
+        new_data = socket.recv(num_bytes)
+        num_bytes = num_bytes - len(new_data)
+        data += new_data
+
+    return data
+
+
+def read_size_and_data_from_socket(socket):
+    """ Utility function to read the size of a data block, followed by all of that data """
+
+    size_bytes = read_exactly(socket, struct.calcsize(SIZE_FORMAT))
+    size = struct.unpack(SIZE_FORMAT, size_bytes)[0]
+
+    data = read_exactly(socket, size)
+    data = data.strip()
+
+    return data
 
 
 class BridgeCommandHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         # self.request is the TCP socket connected to the client
-        self.data = self.request.recv(MAX_CMD_SIZE).strip()
-        self.request.sendall(self.server.bridge.handle_command(self.data))
+        self.data = read_size_and_data_from_socket(self.request)
+
+        write_size_and_data_to_socket(
+            self.request, self.server.bridge.handle_command(self.data))
 
 
 class BridgeCommand(object):
@@ -279,11 +315,11 @@ class Bridge(object):
         try:
             # Connect to server and send data
             sock.settimeout(10)
-            sock.connect((self.host, self.client_port))
-            sock.sendall(data)
+            sock.connect((self.host, self.port))
+            write_size_and_data_to_socket(sock, data)
 
             # Receive data from the server and shut down
-            received = sock.recv(MAX_CMD_SIZE)
+            received = read_size_and_data_from_socket(sock)
         finally:
             sock.close()
 
