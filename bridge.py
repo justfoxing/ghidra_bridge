@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """ Handles converting data back and forward between 2 and 3 """
 
 from __future__ import unicode_literals  # string literals are all unicode
@@ -6,6 +7,7 @@ try:
 except Exception:
     import socketserver  # py3
 
+import unittest
 import traceback
 import json
 import base64
@@ -34,9 +36,7 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 DEFAULT_HOST = "localhost"
-DEFAULT_SERVER_PORT = 34914
-DEFAULT_CLIENT_PORT = DEFAULT_SERVER_PORT+1
-
+DEFAULT_SERVER_PORT = 34940
 
 TYPE = "type"
 VALUE = "value"
@@ -54,6 +54,8 @@ EXCEPTION = "exception"
 OBJ = "obj"
 CALLABLE_OBJ = "callable_obj"
 
+HOST = "host"
+PORT = "port"
 MESSAGE = "message"
 CMD = "cmd"
 ID = "ID"
@@ -150,40 +152,19 @@ class BridgeHandle(object):
         return "BridgeHandle({}: {})".format(self.handle, self.local_obj)
 
 
-class Bridge(object):
-    def __init__(self, host, server_port, client_port):
-        self.handle_dict = dict()
-        self.lock = threading.Lock()
-        self.host = host
-        self.client_port = client_port
+class BridgeConn(object):
+    """ Internal class, representing a connection to a remote bridge that serves our requests """
 
-        self.server = ThreadingTCPServer(
-            (host, server_port), BridgeCommandHandler)
-        self.server.bridge = self
-        self.server.timeout = 1
-        self.server_thread = None
+    def __init__(self, bridge, connect_to_host, connect_to_port):
+        """ Set up the bridge connection - only instantiates a connection as needed """
+        self.bridge = bridge
+        self.host = connect_to_host
+        self.port = connect_to_port
+        self.handle_dict = {}
 
-    def start(self):
-        print("serving!")
-        self.server.serve_forever()
-        print("stopped serving")
-
-    def start_on_thread(self):
-        self.server_thread = threading.Thread(target=self.start)
-        self.server_thread.daemon = True
-        self.server_thread.start()
-
-    def reset(self):
-        """ Blow away all the handles we have """
-        self.handle_dict = dict()
-
-    def __del__(self):
-        self.shutdown()
-
-    def shutdown(self):
-        self.server.shutdown()
-        # tell the other end to blow away its handles so we don't leak memory
-        self.send_cmd({CMD: RESET})
+        # record the server info, to stamp into all commands
+        # TODO get the server host on the receiver end (e.g., it'll be the same address as the request originated from)
+        self.server_host, self.server_port = self.bridge.get_server_info()
 
     def create_handle(self, obj):
         bridge_handle = BridgeHandle(self, obj)
@@ -283,32 +264,11 @@ class Bridge(object):
 
         raise Exception("Unhandled data {}".format(serial_dict))
 
-    def handle_command(self, data):
-        command_dict = json.loads(data)
-
-        response_dict = dict()
-
-        response_dict[RESULT] = {}
-        if command_dict[CMD] == SHUTDOWN:
-            self.shutdown()
-        elif command_dict[CMD] == RESET:
-            self.reset()
-        elif command_dict[CMD] == GET:
-            response_dict[RESULT] = self.local_get(command_dict[ARGS])
-        elif command_dict[CMD] == SET:
-            response_dict[RESULT] = self.local_set(command_dict[ARGS])
-        elif command_dict[CMD] == CALL:
-            response_dict[RESULT] = self.local_call(command_dict[ARGS])
-        elif command_dict[CMD] == DEL:
-            self.local_del(command_dict[ARGS])
-        elif command_dict[CMD] == IMPORT:
-            response_dict[RESULT] = self.local_import(command_dict[ARGS])
-
-        return json.dumps(response_dict).encode("utf-8")
-
     def send_cmd(self, command_dict):
         #print("sending {}".format(command_dict))
-        data = json.dumps(command_dict).encode("utf-8")
+        envelope_dict = {HOST: self.server_host,
+                         PORT: self.server_port, MESSAGE: command_dict}
+        data = json.dumps(envelope_dict).encode("utf-8")
 
         # Create a socket (SOCK_STREAM means a TCP socket)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -425,14 +385,125 @@ class Bridge(object):
 
     def local_import(self, args_dict):
         name = args_dict[NAME]
-        return self.serialize_to_dict(importlib.import_module(name))
+
+        result = None
+        try:
+            result = importlib.import_module(name)
+        except Exception as e:
+            result = e
+            traceback.print_exc()
+
+        return self.serialize_to_dict(result)
+
+
+class Bridge(object):
+    """ Python2Python RPC bridge """
+
+    def __init__(self, server_host="localhost", server_port=0, connect_to_host="localhost", connect_to_port=None):
+        """ Set up the bridge. 
+
+            server_host/port: host/port to listen on to serve requests. If not specified, defaults to localhost:0 (random port - use get_server_info() to find out where it's serving)
+            connect_to_host/port - host/port to connect to run commands. If host not specified, is localhost. If port not specified, is a pure server. """
+        self.handle_dict = dict()
+        self.lock = threading.Lock()
+
+        # init the server
+        self.server = ThreadingTCPServer(
+            (server_host, server_port), BridgeCommandHandler)
+        self.server.bridge = self
+        self.server.timeout = 1
+        self.server_thread = None
+        # TODO note: we still need to start the server (especially for client servers. How do
+
+        self.connections = dict()
+        if connect_to_port is not None:
+            self.client = BridgeConn(self, connect_to_host, connect_to_port)
+
+            self.connections[connect_to_host] = dict()
+            self.connections[connect_to_host][connect_to_port] = self.client
+
+    def get_server_info(self):
+        """ return where the server is serving on """
+        return self.server.socket.getsockname()
+
+    def start(self):
+        print("serving!")
+        self.server.serve_forever()
+        print("stopped serving")
+
+    def start_on_thread(self):
+        self.server_thread = threading.Thread(target=self.start)
+        self.server_thread.daemon = True
+        self.server_thread.start()
+
+    def reset(self):
+        """ Blow away all the handles we have """
+        self.handle_dict = dict()
+
+    def __del__(self):
+        self.shutdown()
+
+    def shutdown(self):
+        self.server.shutdown()
+        # tell the other end to blow away its handles so we don't leak memory
+        #self.send_cmd({CMD: RESET})
+
+    def handle_command(self, data):
+
+        try:
+            envelope_dict = json.loads(data)
+        except:
+            print(len(data))
+            print(data)
+            raise
+
+        conn_host = envelope_dict[HOST]
+        conn_port = envelope_dict[PORT]
+
+        # see if we've already got a connection object for this client
+        connection = None
+        if conn_host in self.connections:
+            if conn_port in self.connections[conn_host]:
+                connection = self.connections[conn_host][conn_port]
+        else:
+            self.connections[conn_host] = dict()
+
+        # if not, create one and store
+        if connection is None:
+            connection = BridgeConn(self, conn_host, conn_port)
+            self.connections[conn_host][conn_port] = connection
+
+        command_dict = envelope_dict[MESSAGE]
+
+        response_dict = dict()
+
+        response_dict[RESULT] = {}
+        if command_dict[CMD] == SHUTDOWN:
+            self.shutdown()
+        elif command_dict[CMD] == RESET:
+            self.reset()
+        elif command_dict[CMD] == GET:
+            response_dict[RESULT] = connection.local_get(command_dict[ARGS])
+        elif command_dict[CMD] == SET:
+            response_dict[RESULT] = connection.local_set(command_dict[ARGS])
+        elif command_dict[CMD] == CALL:
+            response_dict[RESULT] = connection.local_call(command_dict[ARGS])
+        elif command_dict[CMD] == DEL:
+            connection.local_del(command_dict[ARGS])
+        elif command_dict[CMD] == IMPORT:
+            response_dict[RESULT] = connection.local_import(command_dict[ARGS])
+
+        return json.dumps(response_dict).encode("utf-8")
+
+    def remote_import(self, module_name):
+        return self.client.remote_import(module_name)
 
 
 class BridgedObject(object):
     """ An object you can only interact with on the opposite side of a bridge """
 
-    def __init__(self, bridge, obj_dict):
-        self._bridge = bridge
+    def __init__(self, bridge_conn, obj_dict):
+        self._bridge_conn = bridge_conn
         self._bridge_handle = obj_dict[HANDLE]
         self._bridge_type = obj_dict[TYPE]
         self._bridge_attrs = obj_dict[ATTRS]
@@ -451,21 +522,180 @@ class BridgedObject(object):
             self._bridged_set(attr, value)
 
     def _bridged_get(self, name):
-        return self._bridge.remote_get(self._bridge_handle, name)
+        return self._bridge_conn.remote_get(self._bridge_handle, name)
 
     def _bridged_set(self, name, value):
-        return self._bridge.remote_set(self._bridge_handle, name, value)
+        return self._bridge_conn.remote_set(self._bridge_handle, name, value)
 
     def __del__(self):
-        self._bridge.remote_del(self._bridge_handle)
+        self._bridge_conn.remote_del(self._bridge_handle)
 
     def __str__(self):
-        return "BridgedObject({})".format(self._bridge_type)
+        return self._bridged_get("__str__")()
 
     def __repr__(self):
-        return object.__getattribute__(self, "__str__")()
+        return "<BridgedObject({}, handle={})>".format(self._bridge_type, self._bridge_handle)
 
 
 class BridgedCallable(BridgedObject):
     def __call__(self, *args, **kwargs):
-        return self._bridge.remote_call(self._bridge_handle, *args, **kwargs)
+        return self._bridge_conn.remote_call(self._bridge_handle, *args, **kwargs)
+
+
+
+
+class TestBridge(unittest.TestCase):
+    """ Assumes there's a bridge server running at DEFAULT_SERVER_PORT """
+
+    @classmethod
+    def setUpClass(cls):
+        TestBridge.test_bridge = Bridge(connect_to_port=DEFAULT_SERVER_PORT)
+
+    def test_import(self):
+
+        mod = TestBridge.test_bridge.remote_import("base64")
+        self.assertTrue(mod is not None)
+
+    def test_call_no_args(self):
+
+        mod = TestBridge.test_bridge.remote_import("uuid")
+
+        result = mod.uuid4()
+
+        self.assertTrue(result is not None)
+
+    def test_call_arg(self):
+        # also tests call with bytestring arg
+
+        mod = TestBridge.test_bridge.remote_import("base64")
+
+        test_str = str(uuid.uuid4())
+        result = mod.b64encode(test_str.encode("utf-8"))
+
+        result_str = base64.b64decode(result).decode("utf-8")
+
+        self.assertEqual(test_str, result_str)
+
+    def test_call_multi_args(self):
+        mod = TestBridge.test_bridge.remote_import("re")
+
+        remote_obj = mod.compile("foo", mod.IGNORECASE)
+
+        self.assertTrue(remote_obj is not None)
+
+        self.assertTrue(remote_obj.match("FOO") is not None)
+
+    def test_call_with_obj(self):
+        pass
+
+    def test_call_with_remote_obj(self):
+
+        mod = TestBridge.test_bridge.remote_import("uuid")
+
+        remote_obj = mod.uuid4()
+        result = str(remote_obj)
+        self.assertTrue(result is not None)
+        self.assertTrue("-" in result and "4" in result)
+
+    def test_call_with_str(self):
+        """ also tests calling str() on remote obj """
+
+        mod = TestBridge.test_bridge.remote_import("uuid")
+
+        test_uuid_str = "00010203-0405-0607-0809-0a0b0c0d0e0f"
+
+        remote_uuid = mod.UUID(test_uuid_str)
+        self.assertTrue(remote_uuid is not None)
+        result = str(remote_uuid)
+        self.assertEqual(test_uuid_str, result)
+
+    # bool, int, list, tuple, dict, bytes, bridge object, callback, exception, none
+    # set a function into the remote __main__/globals() to call
+    # callback as key func in list.sort
+
+    def test_call_kwargs(self):
+        pass
+
+    def test_get(self):
+        mod = TestBridge.test_bridge.remote_import("uuid")
+        remote_doc = mod.__doc__
+        self.assertTrue("RFC 4122" in remote_doc)
+
+    def test_set(self):
+        test_string = "hello world"
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        mod.test = test_string
+
+        self.assertEqual(test_string, mod.test)
+
+    def test_get_non_existent(self):
+        mod = TestBridge.test_bridge.remote_import("re")
+
+        remote_obj = mod.compile("foo")
+
+        with self.assertRaises(BridgeException):
+            remote_obj.doesnt_exist
+
+    def test_get_callable(self):
+        mod = TestBridge.test_bridge.remote_import("re")
+
+        remote_obj = mod.compile("foo")
+
+        remote_callable = remote_obj.search
+        self.assertTrue(isinstance(remote_callable, BridgedCallable))
+
+    def test_callable(self):
+        mod = TestBridge.test_bridge.remote_import("re")
+
+        remote_obj = mod.compile("foo")
+
+        remote_callable = remote_obj.match
+
+        self.assertTrue(remote_callable("fooa") is not None)
+
+    def test_serialize_deserialize_types(self):
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_list = mod.__builtins__.list
+
+        # assemble a list of different types
+        test_list = [1, 0xFFFFFFFF, True, "string", "unicode_string🐉🔍",
+                     (1, 2, 3), [4, 5, 6], {7: 8, 9: 10}, uuid.uuid4(), pow]
+
+        # send the list in to create a remote list (which comes straight back)s
+        created_list = remote_list(test_list)
+
+        # check it's the same
+        self.assertEqual(test_list, created_list)
+
+    def test_serialize_deserialize_bytes(self):
+        """ byte strings across 2<->3 bridges will be forced to strings (because py2 treats bytes and strs as the same thing """
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_list = mod.__builtins__.list
+
+        test_list = [b"bytes"]
+
+        # send the list in to create a remote list (which comes straight back)s
+        created_list = remote_list(test_list)
+
+        # check it's the same, either as a byte or normal string
+        self.assertTrue(created_list[0] == test_list[0]
+                        or created_list[0] == test_list[0].decode("utf-8"))
+
+    def test_serialize_deserialize_bridge_object(self):
+        # bridge objects TODO
+        pass
+
+    def test_none_result(self):
+        mod = TestBridge.test_bridge.remote_import("re")
+
+        remote_obj = mod.compile("foo")
+
+        remote_callable = remote_obj.search
+
+        self.assertTrue(remote_callable("abar") is None)
+
+    def test_exception(self):
+        pass
+
+    def test_multiple_clients(self):
+        pass

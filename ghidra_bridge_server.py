@@ -1,9 +1,11 @@
 import ghidra_bridge
 
-def run_server(host=ghidra_bridge.bridge.DEFAULT_HOST, server_port=ghidra_bridge.bridge.DEFAULT_SERVER_PORT, client_port=ghidra_bridge.bridge.DEFAULT_CLIENT_PORT):
-    server = ghidra_bridge.GhidraBridge(host=host, local_server_port=server_port, ghidra_server_port=client_port)
+
+def run_server(server_host=ghidra_bridge.bridge.DEFAULT_HOST, server_port=ghidra_bridge.bridge.DEFAULT_SERVER_PORT):
+    server = ghidra_bridge.GhidraBridge(
+        server_host=server_host, server_port=server_port, connect_to_host=None, connect_to_port=None)
     server.bridge.start()
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     run_server()
