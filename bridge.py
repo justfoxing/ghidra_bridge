@@ -127,17 +127,6 @@ class BridgeCommandHandler(socketserver.BaseRequestHandler):
             self.request, self.server.bridge.handle_command(self.data))
 
 
-class BridgeCommand(object):
-    def __init__(self, bridge, command, args):
-        self.bridge = bridge
-        self.cmd_id = uuid.uuid4()
-        self.command = command
-        self.args = args
-
-    def send(self):
-        pass
-
-
 class BridgeHandle(object):
     def __init__(self, bridge, local_obj):
         self.bridge = bridge
@@ -229,7 +218,7 @@ class BridgeConn(object):
         return serialized_dict
 
     def deserialize_from_dict(self, serial_dict):
-        #print(serial_dict)
+        # print(serial_dict)
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
@@ -337,7 +326,7 @@ class BridgeConn(object):
             result = e
             traceback.print_exc()
 
-        #print(result)
+        # print(result)
 
         return self.serialize_to_dict(result)
 
@@ -413,6 +402,7 @@ class Bridge(object):
         self.server.bridge = self
         self.server.timeout = 1
         self.server_thread = None
+        self.is_serving = False
         # TODO note: we still need to start the server (especially for client servers. How do
 
         self.connections = dict()
@@ -428,6 +418,7 @@ class Bridge(object):
 
     def start(self):
         print("serving!")
+        self.is_serving = True
         self.server.serve_forever()
         print("stopped serving")
 
@@ -444,18 +435,14 @@ class Bridge(object):
         self.shutdown()
 
     def shutdown(self):
-        self.server.shutdown()
+        if self.is_serving:
+            self.server.shutdown()
         # tell the other end to blow away its handles so we don't leak memory
         #self.send_cmd({CMD: RESET})
 
     def handle_command(self, data):
 
-        try:
-            envelope_dict = json.loads(data)
-        except:
-            print(len(data))
-            print(data)
-            raise
+        envelope_dict = json.loads(data)
 
         conn_host = envelope_dict[HOST]
         conn_port = envelope_dict[PORT]
@@ -540,8 +527,6 @@ class BridgedObject(object):
 class BridgedCallable(BridgedObject):
     def __call__(self, *args, **kwargs):
         return self._bridge_conn.remote_call(self._bridge_handle, *args, **kwargs)
-
-
 
 
 class TestBridge(unittest.TestCase):
