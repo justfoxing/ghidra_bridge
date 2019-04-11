@@ -35,7 +35,7 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
 
-DEFAULT_HOST = "localhost"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 34940
 
 TYPE = "type"
@@ -388,11 +388,14 @@ class BridgeConn(object):
 class Bridge(object):
     """ Python2Python RPC bridge """
 
-    def __init__(self, server_host="localhost", server_port=0, connect_to_host="localhost", connect_to_port=None):
-        """ Set up the bridge. 
+    def __init__(self, server_host="127.0.0.1", server_port=0, connect_to_host="127.0.0.1", connect_to_port=None, start_in_background=True):
+        """ Set up the bridge.
 
-            server_host/port: host/port to listen on to serve requests. If not specified, defaults to localhost:0 (random port - use get_server_info() to find out where it's serving)
-            connect_to_host/port - host/port to connect to run commands. If host not specified, is localhost. If port not specified, is a pure server. """
+            server_host/port: host/port to listen on to serve requests. If not specified, defaults to 127.0.0.1:0 (random port - use get_server_info() to find out where it's serving)
+            connect_to_host/port - host/port to connect to run commands. If host not specified, is 127.0.0.1. If port not specified, is a pure server.
+            start_in_background - if true, start a thread to serve on before returning. If false, caller will need to start manually
+
+            """
         self.handle_dict = dict()
         self.lock = threading.Lock()
 
@@ -403,7 +406,6 @@ class Bridge(object):
         self.server.timeout = 1
         self.server_thread = None
         self.is_serving = False
-        # TODO note: we still need to start the server (especially for client servers. How do
 
         self.connections = dict()
         if connect_to_port is not None:
@@ -411,6 +413,9 @@ class Bridge(object):
 
             self.connections[connect_to_host] = dict()
             self.connections[connect_to_host][connect_to_port] = self.client
+
+        if start_in_background:
+            self.start_on_thread()
 
     def get_server_info(self):
         """ return where the server is serving on """
@@ -448,6 +453,7 @@ class Bridge(object):
         conn_port = envelope_dict[PORT]
 
         # see if we've already got a connection object for this client
+        #print("is {}:{} in {}".format(conn_host, conn_port, self.connections))
         connection = None
         if conn_host in self.connections:
             if conn_port in self.connections[conn_host]:
@@ -570,9 +576,6 @@ class TestBridge(unittest.TestCase):
 
         self.assertTrue(remote_obj.match("FOO") is not None)
 
-    def test_call_with_obj(self):
-        pass
-
     def test_call_with_remote_obj(self):
 
         mod = TestBridge.test_bridge.remote_import("uuid")
@@ -684,3 +687,27 @@ class TestBridge(unittest.TestCase):
 
     def test_multiple_clients(self):
         pass
+
+    def test_callback(self):
+        """ Test we correctly handle calling back to here from across the bridge """
+        def sort_fn(val):
+            return len(val)
+
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_sorted = mod.__builtins__.sorted
+
+        test_list = ["aaa", "bb", "c"]
+        sorted_list = remote_sorted(test_list, key=sort_fn)
+
+        self.assertEqual(sorted(test_list, key=sort_fn), sorted_list)
+
+    def test_remote_iterable(self):
+        """ Test we can access values from a remote iterable """
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_range = mod.__builtins__.range
+
+        remote_it = remote_range(4, 10, 2)
+
+        it_values = list(remote_it)
+
+        self.assertEqual(list(range(4, 10, 2)), it_values)
