@@ -7,6 +7,7 @@ try:
 except Exception:
     import socketserver  # py3
 
+import logging
 import unittest
 import traceback
 import json
@@ -160,7 +161,8 @@ class BridgeConn(object):
 
         self.handle_dict[bridge_handle.handle] = bridge_handle
 
-        #print("Handle created {}".format(bridge_handle.handle))
+        self.bridge.logger.debug(
+            "Handle created {} for {}".format(bridge_handle.handle, obj))
 
         return bridge_handle
 
@@ -218,7 +220,6 @@ class BridgeConn(object):
         return serialized_dict
 
     def deserialize_from_dict(self, serial_dict):
-        # print(serial_dict)
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
@@ -254,7 +255,7 @@ class BridgeConn(object):
         raise Exception("Unhandled data {}".format(serial_dict))
 
     def send_cmd(self, command_dict):
-        #print("sending {}".format(command_dict))
+        self.bridge.logger.debug("Sending {}".format(command_dict))
         envelope_dict = {HOST: self.server_host,
                          PORT: self.server_port, MESSAGE: command_dict}
         data = json.dumps(envelope_dict).encode("utf-8")
@@ -276,7 +277,7 @@ class BridgeConn(object):
             sock.close()
 
         if received is not None:
-            #print("Received: {}".format(received))
+            self.bridge.logger.debug("Received: {}".format(received))
             response_dict = json.loads(received)
             if RESULT in response_dict:
                 result = response_dict[RESULT]
@@ -288,14 +289,14 @@ class BridgeConn(object):
         self.send_cmd({CMD: SHUTDOWN})
 
     def remote_get(self, handle, name):
-        #print("RGet: {}.{}".format(handle, name))
+        self.bridge.logger.debug("remote_get: {}.{}".format(handle, name))
         command_dict = {CMD: GET, ARGS: {HANDLE: handle, NAME: name}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
     def local_get(self, args_dict):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
-        #print("LGet: {}.{}".format(handle, name))
+        self.bridge.logger.debug("local_get: {}.{}".format(handle, name))
 
         target = self.get_object_by_handle(handle)
         try:
@@ -307,7 +308,8 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
     def remote_set(self, handle, name, value):
-        #print("RSet: {}.{} = {}".format(handle, name, value))
+        self.bridge.logger.debug(
+            "remote_set: {}.{} = {}".format(handle, name, value))
         command_dict = {CMD: SET, ARGS: {HANDLE: handle,
                                          NAME: name, VALUE: self.serialize_to_dict(value)}}
         self.deserialize_from_dict(self.send_cmd(command_dict))
@@ -316,7 +318,8 @@ class BridgeConn(object):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
         value = self.deserialize_from_dict(args_dict[VALUE])
-        #print("LSet: {}.{} = {}".format(handle, name, value))
+        self.bridge.logger.debug(
+            "local_set: {}.{} = {}".format(handle, name, value))
 
         target = self.get_object_by_handle(handle)
         result = None
@@ -326,12 +329,11 @@ class BridgeConn(object):
             result = e
             traceback.print_exc()
 
-        # print(result)
-
         return self.serialize_to_dict(result)
 
     def remote_call(self, handle, *args, **kwargs):
-        #print("RCall: {}({},{})".format(handle, args, kwargs))
+        self.bridge.logger.debug(
+            "remote_call: {}({},{})".format(handle, args, kwargs))
 
         serial_args = self.serialize_to_dict(args)
         serial_kwargs = self.serialize_to_dict(kwargs)
@@ -346,7 +348,8 @@ class BridgeConn(object):
         args = self.deserialize_from_dict(args_dict[ARGS])
         kwargs = self.deserialize_from_dict(args_dict[KWARGS])
 
-        #print("LCall: {}({},{})".format(handle, args, kwargs))
+        self.bridge.logger.debug(
+            "local_call: {}({},{})".format(handle, args, kwargs))
         result = None
         try:
             target_callable = self.get_object_by_handle(handle)
@@ -359,22 +362,24 @@ class BridgeConn(object):
         return response
 
     def remote_del(self, handle):
-        #print("RDel {}".format(handle))
+        self.bridge.logger.debug("remote_del {}".format(handle))
         command_dict = {CMD: DEL, ARGS: {HANDLE: handle}}
         self.send_cmd(command_dict)
 
     def local_del(self, args_dict):
         handle = args_dict[HANDLE]
-        #print("LDel {}".format(handle))
+        self.bridge.logger.debug("local_del {}".format(handle))
         self.release_handle(handle)
 
     def remote_import(self, module_name):
+        self.bridge.logger.debug("remote_import {}".format(module_name))
         command_dict = {CMD: IMPORT, ARGS: {NAME: module_name}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
     def local_import(self, args_dict):
         name = args_dict[NAME]
 
+        self.bridge.logger.debug("local_import {}".format(name))
         result = None
         try:
             result = importlib.import_module(name)
@@ -388,7 +393,7 @@ class BridgeConn(object):
 class Bridge(object):
     """ Python2Python RPC bridge """
 
-    def __init__(self, server_host="127.0.0.1", server_port=0, connect_to_host="127.0.0.1", connect_to_port=None, start_in_background=True):
+    def __init__(self, server_host="127.0.0.1", server_port=0, connect_to_host="127.0.0.1", connect_to_port=None, start_in_background=True, loglevel=None):
         """ Set up the bridge.
 
             server_host/port: host/port to listen on to serve requests. If not specified, defaults to 127.0.0.1:0 (random port - use get_server_info() to find out where it's serving)
@@ -407,6 +412,13 @@ class Bridge(object):
         self.server_thread = None
         self.is_serving = False
 
+        logging.basicConfig()
+        self.logger = logging.getLogger(__name__)
+        if loglevel is None:  # we don't want any logging - ignore everything
+            loglevel = logging.CRITICAL+1
+
+        self.logger.setLevel(loglevel)
+
         self.connections = dict()
         if connect_to_port is not None:
             self.client = BridgeConn(self, connect_to_host, connect_to_port)
@@ -422,10 +434,10 @@ class Bridge(object):
         return self.server.socket.getsockname()
 
     def start(self):
-        print("serving!")
+        self.logger.info("serving!")
         self.is_serving = True
         self.server.serve_forever()
-        print("stopped serving")
+        self.logger.info("stopped serving")
 
     def start_on_thread(self):
         self.server_thread = threading.Thread(target=self.start)
@@ -453,7 +465,6 @@ class Bridge(object):
         conn_port = envelope_dict[PORT]
 
         # see if we've already got a connection object for this client
-        #print("is {}:{} in {}".format(conn_host, conn_port, self.connections))
         connection = None
         if conn_host in self.connections:
             if conn_port in self.connections[conn_host]:
