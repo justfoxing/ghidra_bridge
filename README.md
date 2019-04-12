@@ -53,13 +53,10 @@ Tested and working on Ghidra 9.0.2(Jython 2.7.1) <-> Python 3.6.5 on Windows
 
 TODO
 =====================
-* Exceptions - sort of implemented, but would be nice to get detailed tracebacks on the other side.
-    * Pull traceback info in the exceptions we handle for pushing back
-* Shutdown hangs client in Windows
+* Exceptions - pull traceback info in the exceptions we handle for pushing back
 * Test on Linux
 * Better transport/serialization (JSON/TCP just feels wrong)
 * Packaging - would be nice to do pip install ghidra_bridge for the client-side.
 * Easily enable troubleshooting logging
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
 * Examples
-    * Reckon it'd be possible to launch this from Ghidra and invoke a Python 3 environment to talk to, so you can run your Python 3 analysis scripts from Ghidra via the Script Manager/hotkeys.

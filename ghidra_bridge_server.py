@@ -1,3 +1,7 @@
+# Run a ghidra_bridge server for external python environments to interact with
+#@author justfoxing
+#@category Bridge
+
 import ghidra_bridge
 
 
