@@ -17,6 +17,8 @@ import threading
 import importlib
 import socket
 import struct
+import time
+import weakref
 
 # from six.py's strategy
 INTEGER_TYPES = None
@@ -62,14 +64,13 @@ MESSAGE = "message"
 CMD = "cmd"
 ID = "ID"
 ARGS = "args"
-SHUTDOWN = "shutdown"
-RESET = "reset"
 GET = "get"
 SET = "set"
 CALL = "call"
 IMPORT = "import"
 DEL = "del"
 RESULT = "result"
+ERROR = "error"
 
 HANDLE = "handle"
 NAME = "name"
@@ -120,18 +121,44 @@ def read_size_and_data_from_socket(sock):
 
 
 class BridgeCommandHandler(socketserver.BaseRequestHandler):
+    ERROR_RESULT = json.dumps({ERROR: True})
 
     def handle(self):
-        # self.request is the TCP socket connected to the client
-        self.data = read_size_and_data_from_socket(self.request)
+        """ handle a new client connection coming in - continue trying to read/service requests in a loop until we fail to send/recv """
+        connection = None
+        try:
+            self.server.bridge.logger.info(
+                "Handling connection from {}".format(self.request.getpeername()))
+            while True:
+                # self.request is the TCP socket connected to the client
+                try:
+                    self.data = read_size_and_data_from_socket(self.request)
+                except socket.timeout:
+                    # client didn't have anything to say - just wait some more
+                    time.sleep(0.1)
+                    continue
 
-        write_size_and_data_to_socket(
-            self.request, self.server.bridge.handle_command(self.data))
+                if connection is None:
+                    connection = self.server.bridge.create_connection(
+                        self.data)
+
+                result = BridgeCommandHandler.ERROR_RESULT
+                try:
+                    result = connection.handle_command(self.data)
+                except Exception as e:
+                    self.server.bridge.logger.error(
+                        "Unexpected exception: {}".format(e))
+
+                write_size_and_data_to_socket(self.request, result)
+        except Exception:
+            # something's failed - most likely, the client has closed the connection
+            self.server.bridge.logger.info(
+                "Closing connection from {}".format(self.request.getpeername()))
+            # we're out of the loop now, so the connection object will get told to delete itself, which will remove its references to any objects its holding onto
 
 
 class BridgeHandle(object):
-    def __init__(self, bridge, local_obj):
-        self.bridge = bridge
+    def __init__(self, local_obj):
         self.handle = str(uuid.uuid4())
         self.local_obj = local_obj
         self.attrs = dir(local_obj)
@@ -148,34 +175,55 @@ class BridgeConn(object):
 
     def __init__(self, bridge, connect_to_host, connect_to_port):
         """ Set up the bridge connection - only instantiates a connection as needed """
-        self.bridge = bridge
         self.host = connect_to_host
         self.port = connect_to_port
+
+        # get a reference to the bridge's logger for the connection
+        self.logger = bridge.logger
+
+        self.logger.info(
+            "Creating BridgeConn for {}:{}".format(self.host, self.port))
+
         self.handle_dict = {}
+
+        self.sock = None
+        self.comms_lock = threading.RLock()
+        self.handle_lock = threading.Lock()
 
         # record the server info, to stamp into all commands
         # TODO get the server host on the receiver end (e.g., it'll be the same address as the request originated from)
-        self.server_host, self.server_port = self.bridge.get_server_info()
+        self.server_host, self.server_port = bridge.get_server_info()
+
+    def __del__(self):
+        """ On teardown, make sure we close our socket to the remote bridge """
+        self.logger.info(
+            "Deleting BridgeConn for {}:{}".format(self.host, self.port))
+        with self.comms_lock:
+            if self.sock is not None:
+                self.sock.close()
 
     def create_handle(self, obj):
-        bridge_handle = BridgeHandle(self, obj)
+        bridge_handle = BridgeHandle(obj)
 
-        self.handle_dict[bridge_handle.handle] = bridge_handle
+        with self.handle_lock:
+            self.handle_dict[bridge_handle.handle] = bridge_handle
 
-        self.bridge.logger.debug(
+        self.logger.debug(
             "Handle created {} for {}".format(bridge_handle.handle, obj))
 
         return bridge_handle
 
     def get_object_by_handle(self, handle):
-        if handle not in self.handle_dict:
-            raise Exception("Old/unknown handle {}".format(handle))
+        with self.handle_lock:
+            if handle not in self.handle_dict:
+                raise Exception("Old/unknown handle {}".format(handle))
 
-        return self.handle_dict[handle].local_obj
+            return self.handle_dict[handle].local_obj
 
     def release_handle(self, handle):
-        if handle in self.handle_dict:
-            del self.handle_dict[handle]
+        with self.handle_lock:
+            if handle in self.handle_dict:
+                del self.handle_dict[handle]
 
     def serialize_to_dict(self, data):
         serialized_dict = None
@@ -255,49 +303,51 @@ class BridgeConn(object):
 
         raise Exception("Unhandled data {}".format(serial_dict))
 
+    def get_socket(self):
+        with self.comms_lock:
+            if self.sock is None:
+                # Create a socket (SOCK_STREAM means a TCP socket)
+                self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.sock.settimeout(10)
+                self.sock.connect((self.host, self.port))
+
+            return self.sock
+
     def send_cmd(self, command_dict):
-        self.bridge.logger.debug("Sending {}".format(command_dict))
+        self.logger.debug("Sending {}".format(command_dict))
         envelope_dict = {HOST: self.server_host,
                          PORT: self.server_port, MESSAGE: command_dict}
         data = json.dumps(envelope_dict).encode("utf-8")
 
-        # Create a socket (SOCK_STREAM means a TCP socket)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
         received = None
         result = {}
-        try:
-            # Connect to server and send data
-            sock.settimeout(10)
-            sock.connect((self.host, self.port))
+
+        with self.comms_lock:
+            sock = self.get_socket()
+
+            # send the data
             write_size_and_data_to_socket(sock, data)
 
-            # Receive data from the server and shut down
+            # get the response
             received = read_size_and_data_from_socket(sock)
-        finally:
-            sock.close()
 
         if received is not None:
-            self.bridge.logger.debug("Received: {}".format(received))
+            self.logger.debug("Received: {}".format(received))
             response_dict = json.loads(received)
             if RESULT in response_dict:
                 result = response_dict[RESULT]
 
         return result
 
-    def remote_shutdown(self):
-        #print("Asking remote to stop")
-        self.send_cmd({CMD: SHUTDOWN})
-
     def remote_get(self, handle, name):
-        self.bridge.logger.debug("remote_get: {}.{}".format(handle, name))
+        self.logger.debug("remote_get: {}.{}".format(handle, name))
         command_dict = {CMD: GET, ARGS: {HANDLE: handle, NAME: name}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
     def local_get(self, args_dict):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
-        self.bridge.logger.debug("local_get: {}.{}".format(handle, name))
+        self.logger.debug("local_get: {}.{}".format(handle, name))
 
         target = self.get_object_by_handle(handle)
         try:
@@ -309,7 +359,7 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
     def remote_set(self, handle, name, value):
-        self.bridge.logger.debug(
+        self.logger.debug(
             "remote_set: {}.{} = {}".format(handle, name, value))
         command_dict = {CMD: SET, ARGS: {HANDLE: handle,
                                          NAME: name, VALUE: self.serialize_to_dict(value)}}
@@ -319,7 +369,7 @@ class BridgeConn(object):
         handle = args_dict[HANDLE]
         name = args_dict[NAME]
         value = self.deserialize_from_dict(args_dict[VALUE])
-        self.bridge.logger.debug(
+        self.logger.debug(
             "local_set: {}.{} = {}".format(handle, name, value))
 
         target = self.get_object_by_handle(handle)
@@ -333,7 +383,7 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
     def remote_call(self, handle, *args, **kwargs):
-        self.bridge.logger.debug(
+        self.logger.debug(
             "remote_call: {}({},{})".format(handle, args, kwargs))
 
         serial_args = self.serialize_to_dict(args)
@@ -349,7 +399,7 @@ class BridgeConn(object):
         args = self.deserialize_from_dict(args_dict[ARGS])
         kwargs = self.deserialize_from_dict(args_dict[KWARGS])
 
-        self.bridge.logger.debug(
+        self.logger.debug(
             "local_call: {}({},{})".format(handle, args, kwargs))
         result = None
         try:
@@ -363,24 +413,24 @@ class BridgeConn(object):
         return response
 
     def remote_del(self, handle):
-        self.bridge.logger.debug("remote_del {}".format(handle))
+        self.logger.debug("remote_del {}".format(handle))
         command_dict = {CMD: DEL, ARGS: {HANDLE: handle}}
         self.send_cmd(command_dict)
 
     def local_del(self, args_dict):
         handle = args_dict[HANDLE]
-        self.bridge.logger.debug("local_del {}".format(handle))
+        self.logger.debug("local_del {}".format(handle))
         self.release_handle(handle)
 
     def remote_import(self, module_name):
-        self.bridge.logger.debug("remote_import {}".format(module_name))
+        self.logger.debug("remote_import {}".format(module_name))
         command_dict = {CMD: IMPORT, ARGS: {NAME: module_name}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
     def local_import(self, args_dict):
         name = args_dict[NAME]
 
-        self.bridge.logger.debug("local_import {}".format(name))
+        self.logger.debug("local_import {}".format(name))
         result = None
         try:
             result = importlib.import_module(name)
@@ -389,6 +439,26 @@ class BridgeConn(object):
             traceback.print_exc()
 
         return self.serialize_to_dict(result)
+
+    def handle_command(self, data):
+        envelope_dict = json.loads(data)
+        command_dict = envelope_dict[MESSAGE]
+
+        response_dict = dict()
+
+        response_dict[RESULT] = {}
+        if command_dict[CMD] == GET:
+            response_dict[RESULT] = self.local_get(command_dict[ARGS])
+        elif command_dict[CMD] == SET:
+            response_dict[RESULT] = self.local_set(command_dict[ARGS])
+        elif command_dict[CMD] == CALL:
+            response_dict[RESULT] = self.local_call(command_dict[ARGS])
+        elif command_dict[CMD] == DEL:
+            self.local_del(command_dict[ARGS])
+        elif command_dict[CMD] == IMPORT:
+            response_dict[RESULT] = self.local_import(command_dict[ARGS])
+
+        return json.dumps(response_dict).encode("utf-8")
 
 
 class Bridge(object):
@@ -402,13 +472,12 @@ class Bridge(object):
             start_in_background - if true, start a thread to serve on before returning. If false, caller will need to start manually
 
             """
-        self.handle_dict = dict()
-        self.lock = threading.Lock()
 
         # init the server
         self.server = ThreadingTCPServer(
             (server_host, server_port), BridgeCommandHandler)
-        self.server.bridge = self
+        # the server needs to be able to get back to the bridge to handle commands, but we don't want that reference keeping the bridge alive
+        self.server.bridge = weakref.proxy(self)
         self.server.timeout = 1
         self.server_thread = None
         self.is_serving = False
@@ -420,12 +489,11 @@ class Bridge(object):
 
         self.logger.setLevel(loglevel)
 
-        self.connections = dict()
+        self.connect_to_host = None
         if connect_to_port is not None:
+            self.connect_to_host = connect_to_host
+            self.connect_to_port = connect_to_port
             self.client = BridgeConn(self, connect_to_host, connect_to_port)
-
-            self.connections[connect_to_host] = dict()
-            self.connections[connect_to_host][connect_to_port] = self.client
 
         if start_in_background:
             self.start_on_thread()
@@ -445,60 +513,30 @@ class Bridge(object):
         self.server_thread.daemon = True
         self.server_thread.start()
 
-    def reset(self):
-        """ Blow away all the handles we have """
-        self.handle_dict = dict()
-
     def __del__(self):
         self.shutdown()
 
     def shutdown(self):
+        self.logger.info("Shutting down bridge")
         if self.is_serving:
-            self.server.shutdown()
-        # tell the other end to blow away its handles so we don't leak memory
-        #self.send_cmd({CMD: RESET})
+            self.is_serving = False
+            self.server.server_close()
 
-    def handle_command(self, data):
-
+    def create_connection(self, data):
+        """ Create a bridge connection based on a request that's come in """
         envelope_dict = json.loads(data)
 
         conn_host = envelope_dict[HOST]
         conn_port = envelope_dict[PORT]
 
-        # see if we've already got a connection object for this client
         connection = None
-        if conn_host in self.connections:
-            if conn_port in self.connections[conn_host]:
-                connection = self.connections[conn_host][conn_port]
+        if self.connect_to_host == conn_host and self.connect_to_port == conn_port:
+            # this is a connection back from the bridge we're already connected to, so reuse that connection to make sure the handles are the same
+            connection = self.client
         else:
-            self.connections[conn_host] = dict()
-
-        # if not, create one and store
-        if connection is None:
             connection = BridgeConn(self, conn_host, conn_port)
-            self.connections[conn_host][conn_port] = connection
 
-        command_dict = envelope_dict[MESSAGE]
-
-        response_dict = dict()
-
-        response_dict[RESULT] = {}
-        if command_dict[CMD] == SHUTDOWN:
-            self.shutdown()
-        elif command_dict[CMD] == RESET:
-            self.reset()
-        elif command_dict[CMD] == GET:
-            response_dict[RESULT] = connection.local_get(command_dict[ARGS])
-        elif command_dict[CMD] == SET:
-            response_dict[RESULT] = connection.local_set(command_dict[ARGS])
-        elif command_dict[CMD] == CALL:
-            response_dict[RESULT] = connection.local_call(command_dict[ARGS])
-        elif command_dict[CMD] == DEL:
-            connection.local_del(command_dict[ARGS])
-        elif command_dict[CMD] == IMPORT:
-            response_dict[RESULT] = connection.local_import(command_dict[ARGS])
-
-        return json.dumps(response_dict).encode("utf-8")
+        return connection
 
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)
