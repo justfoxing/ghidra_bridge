@@ -2,6 +2,7 @@
 # @author justfoxing
 # @category Bridge
 
+# NOTE: any imports here may need to be excluded in ghidra_bridge
 import logging
 
 import ghidra_bridge

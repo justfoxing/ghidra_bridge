@@ -1,5 +1,10 @@
 import bridge
 
+""" Use this list to exclude modules loaded on the remote side from being loaded into our namespace.
+This prevents the ghidra_bridge imported by ghidra_bridge_server being loaded over the local ghidra_bridge and causing issues. 
+You probably only want this for stuff imported by the ghidra_bridge_server script that might conflict on the local side.
+"""
+EXCLUDED_REMOTE_IMPORTS = ["logging", "ghidra_bridge"]
 
 class GhidraBridge():
     def __init__(self, server_host="127.0.0.1", server_port=0, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=bridge.DEFAULT_SERVER_PORT, start_in_background=True, loglevel=None):
@@ -14,9 +19,9 @@ class GhidraBridge():
         remote_main = self.bridge.remote_import("__main__")
 
         if namespace is not None:
-            # load in all the attrs from remote main, skipping the double underscores
+            # load in all the attrs from remote main, skipping the double underscores and avoiding overloading our own ghidra_bridge
             for attr in remote_main._bridge_attrs:
-                if not attr.startswith("__"):
+                if not attr.startswith("__") and attr not in EXCLUDED_REMOTE_IMPORTS:
                     namespace[attr] = getattr(remote_main, attr)
 
         return remote_main
