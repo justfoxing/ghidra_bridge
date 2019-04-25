@@ -14,10 +14,9 @@ How to use for Ghidra
 3. From the client python environment:
 ```
 import ghidra_bridge
-b = ghidra_bridge.GhidraBridge()
-b.get_flat_api(namespace=globals())
+b = ghidra_bridge.GhidraBridge(namespace=globals()) # creates the bridge and loads the flat API into the global namespace
 print(getState().getCurrentAddress().getOffset())
-ghidra = b.get_ghidra_api()
+# ghidra module implicitly loaded at the same time as the flat API
 ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 
@@ -25,8 +24,9 @@ or
 
 ```
 import ghidra_bridge
-with ghidra_bridge.GhidraBridge() as ghidra_flat:
-    print(ghidra_flat.getState().getCurrentAddress().getOffset())
+with ghidra_bridge.GhidraBridge(namespace=globals()):
+    print(getState().getCurrentAddress().getOffset())
+    ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 
 How it works
@@ -57,6 +57,5 @@ TODO
 * Test on Linux
 * Better transport/serialization (JSON/TCP just feels wrong)
 * Packaging - would be nice to do pip install ghidra_bridge for the client-side.
-* Easily enable troubleshooting logging
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
 * Examples
