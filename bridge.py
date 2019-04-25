@@ -87,33 +87,33 @@ class BridgeException(Exception):
 SIZE_FORMAT = "!I"
 
 
-def write_size_and_data_to_socket(socket, data):
+def write_size_and_data_to_socket(sock, data):
     """ Utility function to pack the size in front of data and send it off """
 
     # pack the size as network-endian
     size_bytes = struct.pack(SIZE_FORMAT, len(data))
     # send it all off
-    socket.sendall(size_bytes + data)
+    sock.sendall(size_bytes + data)
 
 
-def read_exactly(socket, num_bytes):
+def read_exactly(sock, num_bytes):
     """ Utility function to keep reading from the socket until we get the desired number of bytes """
     data = b''
     while num_bytes > 0:
-        new_data = socket.recv(num_bytes)
+        new_data = sock.recv(num_bytes)
         num_bytes = num_bytes - len(new_data)
         data += new_data
 
     return data
 
 
-def read_size_and_data_from_socket(socket):
+def read_size_and_data_from_socket(sock):
     """ Utility function to read the size of a data block, followed by all of that data """
 
-    size_bytes = read_exactly(socket, struct.calcsize(SIZE_FORMAT))
+    size_bytes = read_exactly(sock, struct.calcsize(SIZE_FORMAT))
     size = struct.unpack(SIZE_FORMAT, size_bytes)[0]
 
-    data = read_exactly(socket, size)
+    data = read_exactly(sock, size)
     data = data.strip()
 
     return data
