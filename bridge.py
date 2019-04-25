@@ -33,7 +33,8 @@ except NameError:  # py3 has no unicode
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    pass
+    # prevent server threads hanging around and stopping python from closing
+    daemon_threads = True
 
 
 DEFAULT_HOST = "127.0.0.1"
