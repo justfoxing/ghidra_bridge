@@ -40,8 +40,10 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_SERVER_PORT = 34942
+DEFAULT_SERVER_PORT = 4768  # "Gh"
 
+VERSION = "v"
+COMMS_VERSION_1 = 1
 TYPE = "type"
 VALUE = "value"
 KEY = "key"
@@ -79,6 +81,8 @@ ATTRS = "attrs"
 KWARGS = "kwargs"
 
 BRIDGE_PREFIX = "_bridge"
+
+MAX_SUPPORTED_COMMS_VERSION = COMMS_VERSION_1
 
 
 class BridgeException(Exception):
@@ -120,8 +124,16 @@ def read_size_and_data_from_socket(sock):
     return data
 
 
+def can_handle_version(message_dict):
+    """ Utility function for checking we know about this version """
+    return message_dict[VERSION] <= MAX_SUPPORTED_COMMS_VERSION
+
+
 class BridgeCommandHandler(socketserver.BaseRequestHandler):
     ERROR_RESULT = json.dumps({ERROR: True})
+    # If we don't know how to handle the version, reply back with an error and the highest version we do support
+    ERROR_UNSUPPORTED_VERSION = json.dumps(
+        {ERROR: True, VERSION: MAX_SUPPORTED_COMMS_VERSION})
 
     def handle(self):
         """ handle a new client connection coming in - continue trying to read/service requests in a loop until we fail to send/recv """
@@ -138,16 +150,21 @@ class BridgeCommandHandler(socketserver.BaseRequestHandler):
                     time.sleep(0.1)
                     continue
 
-                if connection is None:
-                    connection = self.server.bridge.create_connection(
-                        self.data)
+                msg_dict = json.loads(self.data.decode("utf-8"))
 
-                result = BridgeCommandHandler.ERROR_RESULT
-                try:
-                    result = connection.handle_command(self.data)
-                except Exception as e:
-                    self.server.bridge.logger.error(
-                        "Unexpected exception: {}".format(e))
+                result = BridgeCommandHandler.ERROR_UNSUPPORTED_VERSION
+                if can_handle_version(msg_dict):
+                    result = BridgeCommandHandler.ERROR_RESULT
+
+                    if connection is None:
+                        connection = self.server.bridge.create_connection(
+                            msg_dict)
+
+                    try:
+                        result = connection.handle_command(msg_dict)
+                    except Exception as e:
+                        self.server.bridge.logger.error(
+                            "Unexpected exception: {}".format(e))
 
                 write_size_and_data_to_socket(self.request, result)
         except Exception:
@@ -326,7 +343,8 @@ class BridgeConn(object):
 
     def send_cmd(self, command_dict):
         self.logger.debug("Sending {}".format(command_dict))
-        envelope_dict = {HOST: self.server_host,
+        envelope_dict = {VERSION: COMMS_VERSION_1,
+                         HOST: self.server_host,
                          PORT: self.server_port, MESSAGE: command_dict}
         data = json.dumps(envelope_dict).encode("utf-8")
 
@@ -453,9 +471,8 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
-    def handle_command(self, data):
-        envelope_dict = json.loads(data.decode("utf-8"))
-        command_dict = envelope_dict[MESSAGE]
+    def handle_command(self, message_dict):
+        command_dict = message_dict[MESSAGE]
 
         response_dict = dict()
 
@@ -535,12 +552,11 @@ class Bridge(object):
             self.is_serving = False
             self.server.server_close()
 
-    def create_connection(self, data):
+    def create_connection(self, message_dict):
         """ Create a bridge connection based on a request that's come in """
-        envelope_dict = json.loads(data.decode("utf-8"))
 
-        conn_host = envelope_dict[HOST]
-        conn_port = envelope_dict[PORT]
+        conn_host = message_dict[HOST]
+        conn_port = message_dict[PORT]
 
         connection = None
         if self.connect_to_host == conn_host and self.connect_to_port == conn_port:
