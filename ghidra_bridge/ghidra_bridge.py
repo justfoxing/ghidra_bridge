@@ -1,4 +1,4 @@
-import bridge
+from . import bridge
 
 """ Use this list to exclude modules loaded on the remote side from being loaded into our namespace.
 This prevents the ghidra_bridge imported by ghidra_bridge_server being loaded over the local ghidra_bridge and causing issues.
