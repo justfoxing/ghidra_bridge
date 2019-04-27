@@ -333,7 +333,7 @@ class BridgeConn(object):
 
         if received is not None:
             self.logger.debug("Received: {}".format(received))
-            response_dict = json.loads(received)
+            response_dict = json.loads(received.decode("utf-8"))
             if RESULT in response_dict:
                 result = response_dict[RESULT]
 
@@ -441,7 +441,7 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
     def handle_command(self, data):
-        envelope_dict = json.loads(data)
+        envelope_dict = json.loads(data.decode("utf-8"))
         command_dict = envelope_dict[MESSAGE]
 
         response_dict = dict()
@@ -524,7 +524,7 @@ class Bridge(object):
 
     def create_connection(self, data):
         """ Create a bridge connection based on a request that's come in """
-        envelope_dict = json.loads(data)
+        envelope_dict = json.loads(data.decode("utf-8"))
 
         conn_host = envelope_dict[HOST]
         conn_port = envelope_dict[PORT]
