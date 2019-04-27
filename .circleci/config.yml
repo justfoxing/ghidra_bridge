@@ -1,13 +1,17 @@
-# Python CircleCI 2.0 configuration file
-#
-# Check https://circleci.com/docs/2.0/language-python/ for more details
-#
 version: 2
+
+workflows:
+  version: 2
+  test-build:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+
 jobs:
   build:
     docker:
-      # specify the version you desire here
-      # use `-browsers` prefix for selenium tests, e.g. `3.6.1-browsers`
       - image: circleci/python:3.6.1
 
     working_directory: ~/repo
@@ -22,3 +26,29 @@ jobs:
 
       - store_artifacts:
           path: dist
+
+  test:
+    docker:
+      - image: bskaggs/ghidra
+        user: root
+        command: bash
+
+    steps:
+      - run:
+          name: Setup git and python3 environment
+          command: |
+            apt-get install -y git python3
+
+      - checkout:
+          path: /tmp/ghidra_bridge
+        
+      - run:
+          name: Run tests 
+          command: |
+            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
+            ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
+            cd /tmp/ghidra_bridge/ghidra_bridge
+            python3 -m unittest bridge # run the python unittests for bridge
+            cd /tmp/ghidra_bridge
+            python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge
+        
