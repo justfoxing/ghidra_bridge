@@ -11,7 +11,11 @@ How to use for Ghidra
 
 1. Add the path to the ghidra_bridge directory as a script directory in the Ghidra Script Manager (the "3 line" button left of the big red "plus" at the top of the Script Manager)
 2. Run ghidra_bridge_server.py from the Ghidra Script Manager
-3. From the client python environment:
+3. Install ghidra_bridge in the client python environment (packaged at https://pypi.org/project/ghidra-bridge/):
+```
+pip install ghidra_bridge
+```
+4. From the client python:
 ```
 import ghidra_bridge
 b = ghidra_bridge.GhidraBridge(namespace=globals()) # creates the bridge and loads the flat API into the global namespace
@@ -49,13 +53,12 @@ Design principles
 
 Tested
 =====================
-Tested and working on Ghidra 9.0.2(Jython 2.7.1) <-> Python 3.6.5 on Windows
+* Tested and working on Ghidra 9.0.2(Jython 2.7.1) <-> Python 3.6.5 on Windows
+* Automatically tested on Ghidra 9.0(Jython 2.7.1) <-> Python 3.5.3 on Linux (bskaggs/ghidra docker image)
 
 TODO
 =====================
 * Exceptions - pull traceback info in the exceptions we handle for pushing back
-* Test on Linux
 * Better transport/serialization (JSON/TCP just feels wrong)
-* Packaging - would be nice to do pip install ghidra_bridge for the client-side.
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
 * Examples
