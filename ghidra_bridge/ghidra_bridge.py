@@ -23,6 +23,7 @@ class GhidraBridge():
                                     connect_to_host=connect_to_host, connect_to_port=connect_to_port,
                                     start_in_background=start_in_background, loglevel=loglevel)
 
+        self.namespace = None
         if namespace is not None:
             if connect_to_host is None or connect_to_port is None:
                 raise Exception(
@@ -36,8 +37,8 @@ class GhidraBridge():
         """ Get the flat API (as well as the GhidraScript API). If a namespace is provided (e.g., locals() or globals()), load the methods and
         fields from the APIs into that namespace (call unload_flat_api() to remove). Otherwise, just return the bridged module.
 
-        Note that the ghidra package is always loaded into the remote script's side, so get_flat_api with namespace will get the ghidra api for
-        you for free.
+        Note that the ghidra and java packages are always loaded into the remote script's side, so get_flat_api with namespace will get the
+        ghidra api and java namespace for you for free.
         """
 
         remote_main = self.bridge.remote_import("__main__")
@@ -56,10 +57,15 @@ class GhidraBridge():
 
         return remote_main
 
-    def unload_flat_api(self, namespace):
+    def unload_flat_api(self, namespace=None):
         """ If get_flat_api was called with a namespace and loaded methods/fields into it, unload_flat_api will remove them.
             Note: if the values don't match what was loaded, we assume the caller has modified for their own reasons, and leave alone.
         """
+        if namespace is None:
+            if self.namespace is None:
+                raise Exception("Bridge wasn't initialized with a namespace - need to specify the namespace you want to unload from")
+            namespace = self.namespace
+
         if GHIDRA_BRIDGE_NAMESPACE_TRACK in namespace:
             for key, value in namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK].items():
                 if key in namespace:
@@ -74,6 +80,12 @@ class GhidraBridge():
             Note that the module returned from get_flat_api() will also contain the ghidra module, so you may not need to call this.
         """
         return self.bridge.remote_import("ghidra")
+
+    def get_java_api(self):
+        """ get the java namespace - `java = bridge.get_java_api()` equivalent to doing `import java` in your script.
+            Note that the module returned from get_flat_api() will also contain the java module, so you may not need to call this.
+        """
+        return self.bridge.remote_import("java")
 
     def __enter__(self):
         return self
