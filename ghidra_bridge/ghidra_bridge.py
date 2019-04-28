@@ -1,10 +1,11 @@
 from . import bridge
 
-""" Use this list to exclude modules loaded on the remote side from being loaded into our namespace.
+""" Use this list to exclude modules and names loaded by the remote ghidra_bridge side from being loaded into our namespace.
 This prevents the ghidra_bridge imported by ghidra_bridge_server being loaded over the local ghidra_bridge and causing issues.
-You probably only want this for stuff imported by the ghidra_bridge_server script that might conflict on the local side.
+You probably only want this for stuff imported by the ghidra_bridge_server script that might conflict on the local side (or which
+is totally unnecessary on the local side, like GhidraBridgeServer).
 """
-EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess", "ghidra_bridge"]
+EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess", "ghidra_bridge", "GhidraBridgeServer"]
 
 GHIDRA_BRIDGE_NAMESPACE_TRACK = "__ghidra_bridge_namespace_track__"
 

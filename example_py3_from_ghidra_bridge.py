@@ -79,7 +79,7 @@ if __name__ == "__main__":
         import ghidra_bridge_server
         script_file = getSourceFile().getAbsolutePath()
         # spin up a ghidra_bridge_server and spawn the script in external python to connect back to it
-        ghidra_bridge_server.run_script_across_ghidra_bridge(script_file)
+        ghidra_bridge_server.GhidraBridgeServer.run_script_across_ghidra_bridge(script_file)
     else:
         # we're being run outside ghidra! (almost certainly from spawned by run_script_across_ghidra_bridge())
 
