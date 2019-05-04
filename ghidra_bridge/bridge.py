@@ -19,6 +19,7 @@ import socket
 import struct
 import time
 import weakref
+import functools
 
 # from six.py's strategy
 INTEGER_TYPES = None
@@ -59,6 +60,7 @@ BRIDGED = "bridged"
 EXCEPTION = "exception"
 OBJ = "obj"
 CALLABLE_OBJ = "callable_obj"
+BASES = "bases"
 
 HOST = "host"
 PORT = "port"
@@ -198,7 +200,7 @@ class BridgeConn(object):
         # get a reference to the bridge's logger for the connection
         self.logger = bridge.logger
 
-        self.logger.info(
+        self.logger.debug(
             "Creating BridgeConn for {}:{}".format(self.host, self.port))
 
         self.handle_dict = {}
@@ -213,7 +215,7 @@ class BridgeConn(object):
 
     def __del__(self):
         """ On teardown, make sure we close our socket to the remote bridge """
-        self.logger.info(
+        self.logger.debug(
             "Deleting BridgeConn for {}:{}".format(self.host, self.port))
         with self.comms_lock:
             if self.sock is not None:
@@ -289,7 +291,7 @@ class BridgeConn(object):
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
-            return serial_dict[VALUE] == "True"
+            return bool(serial_dict[VALUE])
         elif serial_dict[TYPE] == STR:
             return base64.b64decode(serial_dict[VALUE]).decode("utf-8")
         elif serial_dict[TYPE] == BYTES:
@@ -471,6 +473,30 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
+    def remote_type_create(self, name, bases, dct):
+        self.logger.debug(
+            "remote_type_create {}, {}, {}".format(name, bases, dct))
+        command_dict = {CMD: TYPE, ARGS: {NAME: name, BASES: self.serialize_to_dict(
+            bases), DICT: self.serialize_to_dict(dct)}}
+        return self.deserialize_from_dict(self.send_cmd(command_dict))
+
+    def local_type_create(self, args_dict):
+        name = args_dict[NAME]
+        bases = self.deserialize_from_dict(args_dict[BASES])
+        dct = self.deserialize_from_dict(args_dict[DICT])
+
+        self.logger.debug(
+            "local_type_create {}, {}, {}".format(name, bases, dct))
+        result = None
+
+        try:
+            result = type(name, bases, dct)
+        except Exception as e:
+            result = e
+            traceback.print_exc()
+
+        return self.serialize_to_dict(result)
+
     def handle_command(self, message_dict):
         command_dict = message_dict[MESSAGE]
 
@@ -487,6 +513,8 @@ class BridgeConn(object):
             self.local_del(command_dict[ARGS])
         elif command_dict[CMD] == IMPORT:
             response_dict[RESULT] = self.local_import(command_dict[ARGS])
+        elif command_dict[CMD] == TYPE:
+            response_dict[RESULT] = self.local_type_create(command_dict[ARGS])
 
         return json.dumps(response_dict).encode("utf-8")
 
@@ -573,6 +601,9 @@ class Bridge(object):
 
 class BridgedObject(object):
     """ An object you can only interact with on the opposite side of a bridge """
+    _bridge_conn = None
+    _bridge_handle = None
+    _bridge_type = None
 
     def __init__(self, bridge_conn, obj_dict):
         self._bridge_conn = bridge_conn
@@ -600,7 +631,8 @@ class BridgedObject(object):
         return self._bridge_conn.remote_set(self._bridge_handle, name, value)
 
     def __del__(self):
-        self._bridge_conn.remote_del(self._bridge_handle)
+        if self._bridge_conn is not None:  # only need to del if this was properly init'd
+            self._bridge_conn.remote_del(self._bridge_handle)
 
     def __str__(self):
         return self._bridged_get("__str__")()
@@ -610,12 +642,55 @@ class BridgedObject(object):
 
 
 class BridgedCallable(BridgedObject):
+    # TODO can we further make BridgedClass a subclass of BridgedCallable? How can we detect? Allow us to pull this class/type hack further away from normal calls
+    def __new__(cls, bridge_conn, obj_dict, class_init=None):
+        """ BridgedCallables can also be classes, which means they might be used as base classes for other classes. If this happens,
+            you'll essentially get BridgedCallable.__new__ being called with 4 arguments to create the new class 
+            (instead of 3, for an instance of BridgedCallable). 
+
+            We handle this by creating the class remotely, and returning the BridgedCallable to that remote class. Note that the class methods
+            (including __init__) will be bridged on the remote end, back to us.
+
+            TODO: note sure what might happen if you define __new__ in a class that has a BridgedCallable as the base class
+        """
+        if class_init is None:
+            # instance __new__
+            return super(BridgedCallable, cls).__new__(cls)
+        else:
+            # want to create a class that's based off the remote class represented by a BridgedCallable (in the bases)
+            # [Assumption: BridgedCallable base always first? Not sure what would happen if you had multiple inheritance]
+            # ignore cls, it's just BridgedCallable
+            # name is the name we want to call the class
+            name = bridge_conn
+            # bases are what the class inherits from. Assuming the first one is the BridgedCallable
+            bases = obj_dict
+            # dct is the class dictionary
+            dct = class_init
+            print("cls={}".format(cls))
+            print("name={}".format(name))
+            print("bases={}".format(bases))
+            print("dct={}".format(dct))
+            print(type(bases[0]))
+            assert isinstance(bases[0], BridgedCallable)
+            # create the class remotely, and return the BridgedCallable back to it
+            return bases[0]._bridge_conn.remote_type_create(name, bases, dct)
+
+    def __init__(self, bridge_conn, obj_dict, class_init=None):
+        """ As with __new__, __init__ may be called as part of a class creation, not just an instance of BridgedCallable. We just ignore that case """
+        if class_init is None:
+            super(BridgedCallable, self).__init__(bridge_conn, obj_dict)
+
     def __call__(self, *args, **kwargs):
         return self._bridge_conn.remote_call(self._bridge_handle, *args, **kwargs)
 
+    def __get__(self, instance, owner):
+        """ Implement descriptor get so that we can bind the BridgedCallable to an object if it's defined as part of a class 
+            Use functools.partial to return a wrapper to the BridgedCallable with the instance object as the first arg
+        """
+        return functools.partial(self, instance)
+
     def __repr__(self):
         return "<BridgedCallable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
-
 
 class BridgedIterable(BridgedObject):
     def __iter__(self):
@@ -646,7 +721,6 @@ class BridgedIterator(BridgedObject):
 class BridgedIterableIterator(BridgedIterator, BridgedIterable):
     """ Common enough that iterables return themselves from __iter__ """
     pass
-
 
 class TestBridge(unittest.TestCase):
     """ Assumes there's a bridge server running at DEFAULT_SERVER_PORT """
