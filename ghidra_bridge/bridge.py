@@ -272,7 +272,7 @@ class BridgeConn(object):
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
-            return bool(serial_dict[VALUE])
+            return serial_dict[VALUE] == "True"
         elif serial_dict[TYPE] == STR:
             return base64.b64decode(serial_dict[VALUE]).decode("utf-8")
         elif serial_dict[TYPE] == BYTES:
