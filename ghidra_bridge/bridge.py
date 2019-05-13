@@ -296,10 +296,21 @@ class BridgeConn(object):
             return self.get_object_by_handle(serial_dict[VALUE])
         elif serial_dict[TYPE] == NONE:
             return None
-        elif serial_dict[TYPE] == OBJ:
-            return BridgedObject(self, serial_dict[VALUE])
-        elif serial_dict[TYPE] == CALLABLE_OBJ:
-            return BridgedCallable(self, serial_dict[VALUE], )
+        elif serial_dict[TYPE] == OBJ or serial_dict[TYPE] == CALLABLE_OBJ:
+            if serial_dict[TYPE] == CALLABLE_OBJ:
+                # note: assumes we're not going to get something that's iterable and callable at the same time (except types ... which aren't actually iterable, they may just have __iter__)
+                assert "__iter__" not in serial_dict[VALUE][
+                    ATTRS] or "type"== serial_dict[VALUE][TYPE], "Found something callable and iterable at the same time"
+                return BridgedCallable(self, serial_dict[VALUE])
+            elif "__iter__" in serial_dict[VALUE][ATTRS] and ("__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]):
+                return BridgedIterableIterator(self, serial_dict[VALUE])
+            elif "__iter__" in serial_dict[VALUE][ATTRS]:
+                return BridgedIterable(self, serial_dict[VALUE])
+            elif "__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]:
+                return BridgedIterator(self, serial_dict[VALUE])
+            else:
+                # just an object
+                return BridgedObject(self, serial_dict[VALUE])
 
         raise Exception("Unhandled data {}".format(serial_dict))
 
@@ -407,7 +418,9 @@ class BridgeConn(object):
             result = target_callable(*args, **kwargs)
         except Exception as e:
             result = e
-            traceback.print_exc()
+            # don't display StopIteration exceptions, they're totally normal
+            if not isinstance(e, StopIteration):
+                traceback.print_exc()
 
         response = self.serialize_to_dict(result)
         return response
@@ -584,6 +597,40 @@ class BridgedCallable(BridgedObject):
     def __call__(self, *args, **kwargs):
         return self._bridge_conn.remote_call(self._bridge_handle, *args, **kwargs)
 
+    def __repr__(self):
+        return "<BridgedCallable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
+
+
+class BridgedIterable(BridgedObject):
+    def __iter__(self):
+        return self._bridged_get("__iter__")()
+
+    def __repr__(self):
+        return "<BridgedIterable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
+
+
+class BridgedIterator(BridgedObject):
+    def __next__(self):
+        # py2 vs 3 - next vs __next__
+        try:
+            return self._bridged_get("__next__" if "__next__" in self._bridge_attrs else "next")()
+        except BridgeException as e:
+            # we expect the StopIteration exception - check to see if that's what we got, and if so, raise locally
+            if e.args[1]._bridge_type == "StopIteration":
+                raise StopIteration
+            # otherwise, something went bad - reraise
+            raise
+            
+    next = __next__ # handle being run in a py2 environment
+
+    def __repr__(self):
+        return "<BridgedIterator({}, handle={})>".format(self._bridge_type, self._bridge_handle)
+
+
+class BridgedIterableIterator(BridgedIterator, BridgedIterable):
+    """ Common enough that iterables return themselves from __iter__ """
+    pass
+
 
 class TestBridge(unittest.TestCase):
     """ Assumes there's a bridge server running at DEFAULT_SERVER_PORT """
@@ -696,7 +743,8 @@ class TestBridge(unittest.TestCase):
         remote_list = mod.__builtins__.list
 
         # assemble a list of different types
-        test_list = [1, 0xFFFFFFFF, True, "string", "unicode_string🐉🔍",
+        # Note: we include False now to detect failure to correctly unpack "False" strings into bools
+        test_list = [1, 0xFFFFFFFF, True, False, "string", "unicode_string🐉🔍",
                      (1, 2, 3), [4, 5, 6], {7: 8, 9: 10}, uuid.uuid4(), pow]
 
         # send the list in to create a remote list (which comes straight back)s
@@ -735,9 +783,6 @@ class TestBridge(unittest.TestCase):
     def test_exception(self):
         pass
 
-    def test_multiple_clients(self):
-        pass
-
     def test_callback(self):
         """ Test we correctly handle calling back to here from across the bridge """
         def sort_fn(val):
@@ -759,5 +804,17 @@ class TestBridge(unittest.TestCase):
         remote_it = remote_range(4, 10, 2)
 
         it_values = list(remote_it)
+
+        self.assertEqual(list(range(4, 10, 2)), it_values)
+        
+    def test_remote_iterable_for(self):
+        """ Test we can access values from a remote iterable with a for loop """
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_range = mod.__builtins__.range
+
+        remote_it = remote_range(4, 10, 2)
+        it_values = list()
+        for value in remote_it:
+            it_values.append(value)
 
         self.assertEqual(list(range(4, 10, 2)), it_values)

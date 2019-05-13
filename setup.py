@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="ghidra_bridge",
-    version="0.0.1",
+    version="0.0.2",
     author="justfoxing",
     description="RPC bridge from Python to Ghidra Jython",
     long_description=long_description,
