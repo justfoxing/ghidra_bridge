@@ -40,7 +40,7 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_SERVER_PORT = 34940
+DEFAULT_SERVER_PORT = 34942
 
 TYPE = "type"
 VALUE = "value"
