@@ -596,12 +596,16 @@ class BridgedObject(object):
     _bridge_conn = None
     _bridge_handle = None
     _bridge_type = None
+    _bridge_attrs = None
+    # overrides allow you to make changes just in the local bridge object, not against the remote object (e.g., to avoid conflicts with interactive fixups to the remote __main__)
+    _bridge_overrides = None
 
     def __init__(self, bridge_conn, obj_dict):
         self._bridge_conn = bridge_conn
         self._bridge_handle = obj_dict[HANDLE]
         self._bridge_type = obj_dict[TYPE]
         self._bridge_attrs = obj_dict[ATTRS]
+        self._bridge_overrides = dict()
 
     def __getattribute__(self, attr):
         if attr.startswith(BRIDGE_PREFIX) or attr == "__class__":
@@ -617,16 +621,29 @@ class BridgedObject(object):
             self._bridged_set(attr, value)
 
     def _bridged_get(self, name):
+        if name in self._bridge_overrides:
+            return self._bridge_overrides[name]
+
         return self._bridge_conn.remote_get(self._bridge_handle, name)
 
     def _bridged_set(self, name, value):
-        return self._bridge_conn.remote_set(self._bridge_handle, name, value)
+        if name in self._bridge_overrides:
+            self._bridge_overrides[name] = value
+        else:
+            self._bridge_conn.remote_set(self._bridge_handle, name, value)
+
+    def _bridge_set_override(self, name, value):
+        self._bridge_overrides[name] = value
+
+    def _bridge_clear_override(self, name):
+        del self._bridge_overrides[name]
 
     def __del__(self):
         if self._bridge_conn is not None:  # only need to del if this was properly init'd
             self._bridge_conn.remote_del(self._bridge_handle)
 
     def __str__(self):
+        # TODO broken for javapackage objects (ghidra) and class objects (ghidra.framework.model.ToolListener)
         return self._bridged_get("__str__")()
 
     def __repr__(self):
@@ -658,11 +675,6 @@ class BridgedCallable(BridgedObject):
             bases = obj_dict
             # dct is the class dictionary
             dct = class_init
-            print("cls={}".format(cls))
-            print("name={}".format(name))
-            print("bases={}".format(bases))
-            print("dct={}".format(dct))
-            print(type(bases[0]))
             assert isinstance(bases[0], BridgedCallable)
             # create the class remotely, and return the BridgedCallable back to it
             return bases[0]._bridge_conn.remote_type_create(name, bases, dct)
