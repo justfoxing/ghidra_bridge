@@ -735,6 +735,8 @@ class BridgedObject(object):
     def __getattribute__(self, attr):
         if attr.startswith(BRIDGE_PREFIX) or attr == "__class__":
             result = object.__getattribute__(self, attr)
+        elif attr == "__mro_entries__":  # ignore mro entries - only being called if we're creating a class based of
+            raise AttributeError()
         else:
             result = self._bridged_get(attr)
         return result
