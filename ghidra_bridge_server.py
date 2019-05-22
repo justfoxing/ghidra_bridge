@@ -5,7 +5,7 @@
 # NOTE: any imports here may need to be excluded in ghidra_bridge
 import logging
 import subprocess
-import ghidra_bridge
+from ghidra_bridge import bridge
 
 
 class GhidraBridgeServer(object):
@@ -16,14 +16,13 @@ class GhidraBridgeServer(object):
     """
 
     @staticmethod
-    def run_server(server_host=ghidra_bridge.bridge.DEFAULT_HOST, server_port=ghidra_bridge.bridge.DEFAULT_SERVER_PORT):
+    def run_server(server_host=bridge.DEFAULT_HOST, server_port=bridge.DEFAULT_SERVER_PORT):
         """ Run a ghidra_bridge_server (forever)
             server_host - what address the server should listen on
             server_port - what port the server should listen on
         """
-        server = ghidra_bridge.GhidraBridge(
-            server_host=server_host, server_port=server_port, connect_to_host=None, connect_to_port=None, start_in_background=False, loglevel=logging.INFO)
-        server.bridge.start()
+        bridge.BridgeServer(server_host=server_host,
+                            server_port=server_port, loglevel=logging.DEBUG).run()
 
     @staticmethod
     def run_script_across_ghidra_bridge(script_file, python="python", argstring=""):
@@ -39,8 +38,10 @@ class GhidraBridgeServer(object):
         """
 
         # spawn a ghidra bridge server - use server port 0 to pick a random port
-        server = ghidra_bridge.GhidraBridge(
-            server_host="127.0.0.1", server_port=0, connect_to_host=None, connect_to_port=None, start_in_background=True, loglevel=logging.INFO)
+        server = bridge.BridgeServer(
+            server_host="127.0.0.1", server_port=0, loglevel=logging.INFO)
+        # start it running in a background thread
+        server.start()
 
         try:
             # work out where we're running the server

@@ -517,17 +517,19 @@ class BridgeConn(object):
         return json.dumps(response_dict).encode("utf-8")
 
 
-class Bridge(object):
-    """ Python2Python RPC bridge """
+class BridgeServer(threading.Thread):
+    """ Python2Python RPC bridge server 
 
-    def __init__(self, server_host="127.0.0.1", server_port=0, connect_to_host="127.0.0.1", connect_to_port=None, start_in_background=True, loglevel=None):
+        Like a thread, so call run() to run directly, or start() to run on a background thread
+    """
+
+    def __init__(self, server_host=DEFAULT_HOST, server_port=0, loglevel=None):
         """ Set up the bridge.
 
             server_host/port: host/port to listen on to serve requests. If not specified, defaults to 127.0.0.1:0 (random port - use get_server_info() to find out where it's serving)
-            connect_to_host/port - host/port to connect to run commands. If host not specified, is 127.0.0.1. If port not specified, is a pure server.
-            start_in_background - if true, start a thread to serve on before returning. If false, caller will need to start manually
-
-            """
+            loglevel - what messages to log
+        """
+        super(BridgeServer, self).__init__()
 
         # init the server
         self.server = ThreadingTCPServer(
@@ -535,7 +537,7 @@ class Bridge(object):
         # the server needs to be able to get back to the bridge to handle commands, but we don't want that reference keeping the bridge alive
         self.server.bridge = weakref.proxy(self)
         self.server.timeout = 1
-        self.server_thread = None
+        self.daemon = True
         self.is_serving = False
 
         logging.basicConfig()
@@ -545,29 +547,15 @@ class Bridge(object):
 
         self.logger.setLevel(loglevel)
 
-        self.connect_to_host = None
-        if connect_to_port is not None:
-            self.connect_to_host = connect_to_host
-            self.connect_to_port = connect_to_port
-            self.client = BridgeConn(self, connect_to_host, connect_to_port)
-
-        if start_in_background:
-            self.start_on_thread()
-
     def get_server_info(self):
         """ return where the server is serving on """
         return self.server.socket.getsockname()
 
-    def start(self):
+    def run(self):
         self.logger.info("serving!")
         self.is_serving = True
         self.server.serve_forever()
         self.logger.info("stopped serving")
-
-    def start_on_thread(self):
-        self.server_thread = threading.Thread(target=self.start)
-        self.server_thread.daemon = True
-        self.server_thread.start()
 
     def __del__(self):
         self.shutdown()
@@ -578,23 +566,29 @@ class Bridge(object):
             self.is_serving = False
             self.server.server_close()
 
-    def create_connection(self, message_dict):
-        """ Create a bridge connection based on a request that's come in """
 
-        conn_host = message_dict[HOST]
-        conn_port = message_dict[PORT]
+class BridgeClient(object):
+    """ Python2Python RPC bridge client """
 
-        connection = None
-        if self.connect_to_host == conn_host and self.connect_to_port == conn_port:
-            # this is a connection back from the bridge we're already connected to, so reuse that connection to make sure the handles are the same
-            connection = self.client
-        else:
-            connection = BridgeConn(self, conn_host, conn_port)
+    def __init__(self, connect_to_host=DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None):
+        """ Set up the bridge client
+            connect_to_host/port - host/port to connect to run commands. 
+            loglevel - what messages to log
+        """
+        logging.basicConfig()
+        self.logger = logging.getLogger(__name__)
+        if loglevel is None:  # we don't want any logging - ignore everything
+            loglevel = logging.CRITICAL+1
 
-        return connection
+        self.logger.setLevel(loglevel)
+
+        self.client = BridgeConn(
+            self, sock=None, connect_to_host=connect_to_host, connect_to_port=connect_to_port)
 
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)
+
+    # TODO shutdown
 
 
 class BridgedObject(object):
