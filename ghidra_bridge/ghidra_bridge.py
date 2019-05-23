@@ -3,10 +3,10 @@ import weakref
 
 from . import bridge
 
-""" Use this list to exclude modules and names loaded by the remote ghidra_bridge side from being loaded into our namespace.
-This prevents the ghidra_bridge imported by ghidra_bridge_server being loaded over the local ghidra_bridge and causing issues.
-You probably only want this for stuff imported by the ghidra_bridge_server script that might conflict on the local side (or which
-is totally unnecessary on the local side, like GhidraBridgeServer).
+""" Use this list to exclude modules and names loaded by the remote ghidra_bridge side from being loaded into namespaces (they'll 
+still be present in the BridgedObject for the __main__ module. This prevents the ghidra_bridge imported by ghidra_bridge_server 
+being loaded over the local ghidra_bridge and causing issues. You probably only want this for stuff imported by the ghidra_bridge_server
+script that might conflict on the local side (or which is totally unnecessary on the local side, like GhidraBridgeServer).
 """
 EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess",
                            "ghidra_bridge", "bridge", "GhidraBridgeServer"]
@@ -116,7 +116,7 @@ class GhidraBridge():
                         module for module in self.flat_api_modules_list if module() is not None]
 
                     update_list = [
-                        module() for module in self.flat_api_modules_list] + self.namespace_list
+                        module() for module in self.flat_api_modules_list]
                     for update in update_list:
                         # possible that a module might have been removed between the clear out and preparing the update list
                         if update is not None:
@@ -131,42 +131,33 @@ class GhidraBridge():
                             if currentHighlight is not None:
                                 update.currentHighlight = currentHighlight if not currentHighlight.isEmpty() else None
 
-                # define the interactive listener here, because we need the remote ghidra object
-                class InteractiveListener(remote_main.ghidra.framework.model.ToolListener):
-                    def __init__(self, tool):
-                        self.tool = tool
-
-                        # register the listener against the remote tool
-                        tool.addToolListener(self)
-
-                    def stop_listening(self):
-                        # we're done, make sure we remove the tool listener
-                        self.tool.removeToolListener(self)
-
-                    def processToolEvent(self, plugin_event):
-                        """ Called by the ToolListener interface """
-                        event_name = plugin_event.getEventName()
-                        if "Location" in event_name:
-                            update_vars(currentProgram=plugin_event.getProgram(
-                            ), currentLocation=plugin_event.getLocation())
-                        elif "Selection" in event_name:
-                            update_vars(currentProgram=plugin_event.getProgram(
-                            ), currentSelection=plugin_event.getSelection())
-                        elif "Highlight" in event_name:
-                            update_vars(currentProgram=plugin_event.getProgram(
-                            ), currentHighlight=plugin_event.getHighlight())
-
-                self.interactive_listener = InteractiveListener(
-                    remote_main.state.getTool())
+                    # repeat the same for the namespace dictionaries
+                    for update_dict in self.namespace_list:
+                        if currentProgram is not None:
+                            update_dict["currentProgram"] = currentProgram
+                        if currentLocation is not None:
+                            # match the order of updates in GhidraScript - location before address
+                            update_dict["currentLocation"] = currentLocation
+                            update_dict["currentAddress"] = currentLocation.getAddress()
+                        if currentSelection is not None:
+                            update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty() else None
+                        if currentHighlight is not None:
+                            update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty() else None
+                
+                # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
+                print("creating interactive listener")
+                self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
+                    remote_main.state.getTool(), update_vars)
 
         if namespace is not None:
             # add a special var to the namespace to track what we add, so we can remove it easily later
             namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK] = dict()
 
-            # load in all the attrs from remote main, skipping the double underscores and avoiding overloading our own ghidra_bridge
+            # load in all the attrs from remote main, skipping the double underscores and avoiding overloading our own ghidra_bridge (and similar modules)
             try:
                 for attr in remote_main._bridge_attrs + list(remote_main._bridge_overrides.keys()):
                     if not attr.startswith("__") and attr not in EXCLUDED_REMOTE_IMPORTS:
+                        # TODO optimisation - at the moment, this results in individual calls for each element. Can we batch this somehow, or include in the original get?
                         remote_attr = getattr(remote_main, attr)
                         namespace[attr] = remote_attr
                         # record what we added to the namespace

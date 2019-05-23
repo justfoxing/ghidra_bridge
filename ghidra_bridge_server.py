@@ -7,13 +7,63 @@ import logging
 import subprocess
 from ghidra_bridge import bridge
 
+# NOTE: we definitely DON'T want to exclude ghidra from ghidra_bridge :P
+import ghidra
 
 class GhidraBridgeServer(object):
-    """ Class mostly used to collect together functions and variables that we don't want contaminating the __main__ module
-        that gets sent back to clients
+    """ Class mostly used to collect together functions and variables that we don't want contaminating the global namespace
+        variables set in remote clients
 
-        NOTE: this class needs to be excluded from ghidra_bridge - it'll contaminate __main__
+        NOTE: this class needs to be excluded from ghidra_bridge - it doesn't need to be in the globals, if people want it and
+        know what they're doing, they can get it from the BridgedObject for the main module
     """
+    
+    class InteractiveListener(ghidra.framework.model.ToolListener):
+        """ Class to handle registering for plugin events associated with the GUI
+            environment, and sending them back to clients running in interactive mode
+            so they can update their variables 
+            
+            We define the interactive listener on the server end, so it can
+            cleanly recover from bridge failures when trying to send messages back. If we
+            let it propagate exceptions up into Ghidra, the GUI gets unhappy and can stop
+            sending tool events out 
+        """
+        tool = None
+        callback_fn = None
+          
+        def __init__(self, tool, callback_fn):
+            """ Create with the tool to listen to (from state.getTool() - won't change during execution)
+                and the callback function to notify on the client end (should be the update_vars function) """
+            self.tool = tool
+            self.callback_fn = callback_fn
+
+            # register the listener against the remote tool
+            tool.addToolListener(self)
+
+        def stop_listening(self):
+            # we're done, make sure we remove the tool listener
+            self.tool.removeToolListener(self)
+
+        def processToolEvent(self, plugin_event):
+            """ Called by the ToolListener interface """
+            try:
+		self.callback_fn._bridge_conn.logger.debug("InteractiveListener got event: " + str(plugin_event))
+
+                event_name = plugin_event.getEventName()
+                if "Location" in event_name:
+                    self.callback_fn(currentProgram=plugin_event.getProgram(
+                    ), currentLocation=plugin_event.getLocation())
+                elif "Selection" in event_name:
+                    self.callback_fn(currentProgram=plugin_event.getProgram(
+                    ), currentSelection=plugin_event.getSelection())
+                elif "Highlight" in event_name:
+                    self.callback_fn(currentProgram=plugin_event.getProgram(
+                    ), currentHighlight=plugin_event.getHighlight())
+            except Exception as e:
+                # any exception, we just want to bail and shut down the listener. 
+                # most likely case is the bridge connection has gone down. 
+                self.stop_listening()
+                self.callback_fn._bridge_conn.logger.error("InteractiveListener failed trying to callback client: " + str(e))
 
     @staticmethod
     def run_server(server_host=bridge.DEFAULT_HOST, server_port=bridge.DEFAULT_SERVER_PORT):
