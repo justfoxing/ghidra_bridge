@@ -130,40 +130,111 @@ def read_size_and_data_from_socket(sock):
 def can_handle_version(message_dict):
     """ Utility function for checking we know about this version """
     return (message_dict[VERSION] <= MAX_SUPPORTED_COMMS_VERSION) and (message_dict[VERSION] >= MIN_SUPPORTED_COMMS_VERSION)
-
-
+            
 class BridgeCommandHandlerThread(threading.Thread):
-    """ class to handle running a thread to handle processing a command """
+    """ Thread that checks for commands to handle and serves them """
+    
     bridge_conn = None
-    data = None
-
+    threadpool = None
+    
     ERROR_RESULT = json.dumps({ERROR: True})
-
-    def __init__(self, bridge_conn, msg_dict):
+    
+    def __init__(self, threadpool):
         super(BridgeCommandHandlerThread, self).__init__()
-
-        self.bridge_conn = bridge_conn
-        self.msg_dict = msg_dict
+        
+        self.bridge_conn = threadpool.bridge_conn
+        self.threadpool = weakref.proxy(threadpool) # make sure this thread doesn't keep the threadpool alive
+        
         # don't let the command handlers keep us alive
         self.daemon = True
-
+        
     def run(self):
-        # handle a command and write back the response
-        # TODO make this return an error tied to the cmd_id, so it goes in the response mgr
-        result = BridgeCommandHandlerThread.ERROR_RESULT
         try:
-            result = self.bridge_conn.handle_command(self.msg_dict)
-        except Exception as e:
-            self.bridge_conn.logger.error(
-                "Unexpected exception: {}".format(e))
+            cmd = self.threadpool.get_command() # block, waiting for first command
+            while cmd is not None: # get_command returns none if we should shut down
+                # handle a command and write back the response
+                # TODO make this return an error tied to the cmd_id, so it goes in the response mgr
+                result = BridgeCommandHandlerThread.ERROR_RESULT
+                try:
+                    result = self.bridge_conn.handle_command(cmd)
+                except Exception as e:
+                    self.bridge_conn.logger.error(
+                        "Unexpected exception: {}".format(e))
 
+                try:
+                    write_size_and_data_to_socket(
+                        self.bridge_conn.get_socket(), result)
+                        
+                    cmd = self.threadpool.get_command() # block, waiting for next command
+                except socket.error:
+                    # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk. Don't bother staying around, they're probably dead
+                    pass
+        finally:
+            self.bridge_conn.logger.error("done")
+        
+            
+class BridgeCommandHandlerThreadPool(object):
+    """ Takes commands and handles spinning up threads to run them. Will keep the threads that are started and reuse them before creating new ones """
+    bridge_conn = None
+    ready_threads = None # semaphore indicating how many threads are ready right now to grab a command
+    command_list = None # store the commands that need to be handled
+    command_list_read_lock = None # just for reading the list
+    command_list_write_lock = None # for writing the list
+    shutdown_flag = False
+    
+    def __init__(self, bridge_conn):
+        self.thread_count = 0
+        self.bridge_conn = bridge_conn
+        self.ready_threads = threading.Semaphore(0) # start the ready threads at 0
+        self.command_list = list()
+        self.command_list_read_lock = threading.Lock()
+        self.command_list_write_lock = threading.Lock()
+        
+    def handle_command(self, msg_dict):
+        """ Give the threadpool a command to handle """
+        # test if there are ready_threads waiting
+        if not self.ready_threads.acquire(blocking=False):
+            # no ready threads waiting - create a new one
+            self.thread_count +=1
+            self.bridge_conn.logger.debug("Creating thread - now {} threads".format(self.thread_count))
+            new_handler = BridgeCommandHandlerThread(self)
+            new_handler.start()
+        else:
+            self.ready_threads.release()
+        
+        # take out the write lock, we're adding to the list
+        with self.command_list_write_lock: 
+            self.command_list.append(msg_dict)
+            # the next ready thread will grab the command
+            
+    def get_command(self):
+        """ Threads ask for commands to handle - a thread stuck waiting here is counted in the ready threads """
+        # release increments the ready threads count
+        self.ready_threads.release()
+        
         try:
-            write_size_and_data_to_socket(
-                self.bridge_conn.get_socket(), result)
-        except socket.error:
-            # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk.
-            pass
-
+            while not self.shutdown_flag:
+                # get the read lock, so we can see if there's anything to do
+                with self.command_list_read_lock:
+                    if len(self.command_list) > 0:
+                        # yes! grab the write lock (only thing that can have the write lock without the read lock is commands being added, so we won't deadlock/have to wait long)
+                        with self.command_list_write_lock:
+                            # yes! give back the first command
+                            return self.command_list.pop()
+                # wait a little before we try again
+                time.sleep(0.01)
+        finally:
+            # make sure the thread "acquires" the semaphore (decrements the ready_threads count)
+            self.ready_threads.acquire(blocking=False)
+            
+        # if we make it here, we're shutting down. return none and the thread will pack it in
+        return None
+            
+    def __del__(self):
+        """ We're done with this threadpool, tell the threads to start packing it in """
+        self.shutdown_flag = True
+        
+        
 
 class BridgeReceiverThread(threading.Thread):
     """ class to handle running a thread to receive bridge commands/responses and direct accordingly """
@@ -181,6 +252,9 @@ class BridgeReceiverThread(threading.Thread):
         self.daemon = True
 
     def run(self):
+        # threadpool to handle creating/running threads to handle commands
+        threadpool = BridgeCommandHandlerThreadPool(self.bridge_conn)
+    
         while True:  # TODO shutdown flag
             try:
                 data = read_size_and_data_from_socket(
@@ -200,15 +274,12 @@ class BridgeReceiverThread(threading.Thread):
                         # handle a response
                         self.bridge_conn.response_mgr.add_response(msg_dict)
                     else:
-                        # TODO actually, queue this and hand off to a worker thread(pool)
-                        # spawn thread to handle request, up to max threads TODO
-                        handler_thread = BridgeCommandHandlerThread(
-                            self.bridge_conn, msg_dict)
-                        handler_thread.start()
+                        # queue this and hand off to a worker threadpool
+                        threadpool.handle_command(msg_dict)
                 else:
                     # bad version
                     write_size_and_data_to_socket(
-                        self.response_socket, BridgeReceiverThread.ERROR_UNSUPPORTED_VERSION)
+                        self.bridge_conn.get_socket(), BridgeReceiverThread.ERROR_UNSUPPORTED_VERSION)
             except Exception as e:
                 # eat exceptions and continue, don't want a bad message killing the recv loop
                 self.bridge_conn.logger.exception(e)
@@ -451,6 +522,7 @@ class BridgeConn(object):
     def get_socket(self):
         with self.comms_lock:
             if self.sock is None:
+                self.logger.debug("Creating socket to {}:{}".format(self.host, self.port))
                 # Create a socket (SOCK_STREAM means a TCP socket)
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.sock.settimeout(10)
