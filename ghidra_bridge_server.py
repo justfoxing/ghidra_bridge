@@ -22,7 +22,7 @@ class GhidraBridgeServer(object):
             server_port - what port the server should listen on
         """
         bridge.BridgeServer(server_host=server_host,
-                            server_port=server_port, loglevel=logging.DEBUG).run()
+                            server_port=server_port, loglevel=logging.INFO).run()
 
     @staticmethod
     def run_script_across_ghidra_bridge(script_file, python="python", argstring=""):
