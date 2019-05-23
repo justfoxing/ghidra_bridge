@@ -2,7 +2,7 @@ version: 2
 
 workflows:
   version: 2
-  test-build:
+  test-build-release:
     jobs:
       - test
       - build:
@@ -22,6 +22,7 @@ jobs:
       - run:
           name: Build ghidra_bridge package
           command: |
+            pip3 install --user --upgrade setuptools # make sure we've got the latest version, to support using Markdown
             python3 setup.py sdist bdist_wheel --universal
 
       - store_artifacts:
@@ -37,7 +38,8 @@ jobs:
       - run:
           name: Setup git and python3 environment
           command: |
-            apt-get install -y git python3
+            apt-get update || apt-get update 
+            apt-get install -y git python3 python3-pip
 
       - checkout:
           path: /tmp/ghidra_bridge
@@ -47,8 +49,8 @@ jobs:
           command: |
             /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
             ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
-            cd /tmp/ghidra_bridge/ghidra_bridge
-            python3 -m unittest bridge # run the python unittests for bridge
+            pip3 install nose
             cd /tmp/ghidra_bridge
+            nosetests --with-xunit # run the python unittests
             python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge
         
