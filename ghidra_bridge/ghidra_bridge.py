@@ -15,21 +15,19 @@ GHIDRA_BRIDGE_NAMESPACE_TRACK = "__ghidra_bridge_namespace_track__"
 
 
 def find_ProgramPlugin(tool):
-    """ Use the provided tool (probably something like CodeBrowser) to find the 
-        PythonPlugin or GhidraScriptMgrPlugin that should be present (because the ghidra bridge server python script is running...)
-
-        These plugins extends ProgramPlugin, so they have access to useful state like
-        the current address, etc 
+    """ Use the provided tool (probably something like CodeBrowser) to find any loaded plugin that extends ProgramPlugin, 
+        which gives access to useful state like the current address, etc 
     """
     plugins = tool.getManagedPlugins()
     plugin = None
     for i in range(0, plugins.size()):
         plugin = plugins.get(i)
-        if "PythonPlugin" == plugin.getName() or "GhidraScriptMgrPlugin" == plugin.getName():
+        if "getProgramLocation" in plugin._bridge_attrs:
+            # it's a program plugin! that'll work just fine
             return plugin
 
     raise Exception(
-        "Couldn't find targeted plugins in {} from {}".format(plugins, tool))
+        "Couldn't find a ProgramPlugin in {} from {}".format(plugins, tool))
 
 
 class GhidraBridge():
