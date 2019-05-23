@@ -74,6 +74,10 @@ class GhidraBridge():
 
         remote_main = self.bridge.remote_import("__main__")
 
+        if namespace is not None:
+            # we're going to need the all of __main__, so get it all in one hit
+            remote_main._bridged_get_all()
+
         if self.interactive_mode:
             # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
             tool = remote_main.state.getTool()  # note: tool shouldn't change
@@ -136,14 +140,16 @@ class GhidraBridge():
                         if currentLocation is not None:
                             # match the order of updates in GhidraScript - location before address
                             update_dict["currentLocation"] = currentLocation
-                            update_dict["currentAddress"] = currentLocation.getAddress()
+                            update_dict["currentAddress"] = currentLocation.getAddress(
+                            )
                         if currentSelection is not None:
-                            update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty() else None
+                            update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty(
+                            ) else None
                         if currentHighlight is not None:
-                            update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty() else None
-                
+                            update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty(
+                            ) else None
+
                 # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
-                print("creating interactive listener")
                 self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
                     remote_main.state.getTool(), update_vars)
 
@@ -153,9 +159,8 @@ class GhidraBridge():
 
             # load in all the attrs from remote main, skipping the double underscores and avoiding overloading our own ghidra_bridge (and similar modules)
             try:
-                for attr in remote_main._bridge_attrs + list(remote_main._bridge_overrides.keys()):
+                for attr in set(remote_main._bridge_attrs + list(remote_main._bridge_overrides.keys())):
                     if not attr.startswith("__") and attr not in EXCLUDED_REMOTE_IMPORTS:
-                        # TODO optimisation - at the moment, this results in individual calls for each element. Can we batch this somehow, or include in the original get?
                         remote_attr = getattr(remote_main, attr)
                         namespace[attr] = remote_attr
                         # record what we added to the namespace
@@ -210,6 +215,6 @@ class GhidraBridge():
     def __exit__(self, type, value, traceback):
         if self.namespace is not None:
             self.unload_flat_api(self.namespace)
-            
+
         if self.interactive_listener is not None:
             self.interactive_listener.stop_listening()

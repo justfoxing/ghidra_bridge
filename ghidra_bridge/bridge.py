@@ -68,6 +68,7 @@ CMD = "cmd"
 ID = "ID"
 ARGS = "args"
 GET = "get"
+GET_ALL = "get_all"
 SET = "set"
 CALL = "call"
 IMPORT = "import"
@@ -99,9 +100,17 @@ def write_size_and_data_to_socket(sock, data):
     """ Utility function to pack the size in front of data and send it off """
 
     # pack the size as network-endian
+    data_size = len(data)
     size_bytes = struct.pack(SIZE_FORMAT, len(data))
-    # send it all off
-    sock.sendall(size_bytes + data)
+    package = size_bytes + data
+    total_size = len(size_bytes) + data_size
+
+    sent = 0
+    # noted errors sending large blobs of data with sendall, so we'll send as much as send() allows and keep trying
+    while sent < total_size:
+        # send it all off
+        bytes_sent = sock.send(package[sent:])
+        sent = sent + bytes_sent
 
 
 def read_exactly(sock, num_bytes):
@@ -130,28 +139,30 @@ def read_size_and_data_from_socket(sock):
 def can_handle_version(message_dict):
     """ Utility function for checking we know about this version """
     return (message_dict[VERSION] <= MAX_SUPPORTED_COMMS_VERSION) and (message_dict[VERSION] >= MIN_SUPPORTED_COMMS_VERSION)
-            
+
+
 class BridgeCommandHandlerThread(threading.Thread):
     """ Thread that checks for commands to handle and serves them """
-    
+
     bridge_conn = None
     threadpool = None
-    
+
     ERROR_RESULT = json.dumps({ERROR: True})
-    
+
     def __init__(self, threadpool):
         super(BridgeCommandHandlerThread, self).__init__()
-        
+
         self.bridge_conn = threadpool.bridge_conn
-        self.threadpool = weakref.proxy(threadpool) # make sure this thread doesn't keep the threadpool alive
-        
+        # make sure this thread doesn't keep the threadpool alive
+        self.threadpool = weakref.proxy(threadpool)
+
         # don't let the command handlers keep us alive
         self.daemon = True
-        
+
     def run(self):
         try:
-            cmd = self.threadpool.get_command() # block, waiting for first command
-            while cmd is not None: # get_command returns none if we should shut down
+            cmd = self.threadpool.get_command()  # block, waiting for first command
+            while cmd is not None:  # get_command returns none if we should shut down
                 # handle a command and write back the response
                 # TODO make this return an error tied to the cmd_id, so it goes in the response mgr
                 result = BridgeCommandHandlerThread.ERROR_RESULT
@@ -164,54 +175,57 @@ class BridgeCommandHandlerThread(threading.Thread):
                 try:
                     write_size_and_data_to_socket(
                         self.bridge_conn.get_socket(), result)
-                        
-                    cmd = self.threadpool.get_command() # block, waiting for next command
+
+                    cmd = self.threadpool.get_command()  # block, waiting for next command
                 except socket.error:
                     # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk. Don't bother staying around, they're probably dead
                     pass
         finally:
             self.bridge_conn.logger.error("done")
-        
-            
+
+
 class BridgeCommandHandlerThreadPool(object):
     """ Takes commands and handles spinning up threads to run them. Will keep the threads that are started and reuse them before creating new ones """
     bridge_conn = None
-    ready_threads = None # semaphore indicating how many threads are ready right now to grab a command
-    command_list = None # store the commands that need to be handled
-    command_list_read_lock = None # just for reading the list
-    command_list_write_lock = None # for writing the list
+    # semaphore indicating how many threads are ready right now to grab a command
+    ready_threads = None
+    command_list = None  # store the commands that need to be handled
+    command_list_read_lock = None  # just for reading the list
+    command_list_write_lock = None  # for writing the list
     shutdown_flag = False
-    
+
     def __init__(self, bridge_conn):
         self.thread_count = 0
         self.bridge_conn = bridge_conn
-        self.ready_threads = threading.Semaphore(0) # start the ready threads at 0
+        self.ready_threads = threading.Semaphore(
+            0)  # start the ready threads at 0
         self.command_list = list()
         self.command_list_read_lock = threading.Lock()
         self.command_list_write_lock = threading.Lock()
-        
+
     def handle_command(self, msg_dict):
         """ Give the threadpool a command to handle """
         # test if there are ready_threads waiting
         if not self.ready_threads.acquire(blocking=False):
             # no ready threads waiting - create a new one
-            self.thread_count +=1
-            self.bridge_conn.logger.debug("Creating thread - now {} threads".format(self.thread_count))
+            self.thread_count += 1
+            self.bridge_conn.logger.debug(
+                "Creating thread - now {} threads".format(self.thread_count))
             new_handler = BridgeCommandHandlerThread(self)
             new_handler.start()
         else:
             self.ready_threads.release()
-        
+
         # take out the write lock, we're adding to the list
-        with self.command_list_write_lock: 
+        with self.command_list_write_lock:
             self.command_list.append(msg_dict)
             # the next ready thread will grab the command
-            
+
     def get_command(self):
         """ Threads ask for commands to handle - a thread stuck waiting here is counted in the ready threads """
         # release increments the ready threads count
         self.ready_threads.release()
-        
+
         try:
             while not self.shutdown_flag:
                 # get the read lock, so we can see if there's anything to do
@@ -226,15 +240,14 @@ class BridgeCommandHandlerThreadPool(object):
         finally:
             # make sure the thread "acquires" the semaphore (decrements the ready_threads count)
             self.ready_threads.acquire(blocking=False)
-            
+
         # if we make it here, we're shutting down. return none and the thread will pack it in
         return None
-            
+
     def __del__(self):
         """ We're done with this threadpool, tell the threads to start packing it in """
         self.shutdown_flag = True
-        
-        
+
 
 class BridgeReceiverThread(threading.Thread):
     """ class to handle running a thread to receive bridge commands/responses and direct accordingly """
@@ -254,7 +267,7 @@ class BridgeReceiverThread(threading.Thread):
     def run(self):
         # threadpool to handle creating/running threads to handle commands
         threadpool = BridgeCommandHandlerThreadPool(self.bridge_conn)
-    
+
         while True:  # TODO shutdown flag
             try:
                 data = read_size_and_data_from_socket(
@@ -505,7 +518,7 @@ class BridgeConn(object):
             if serial_dict[TYPE] == CALLABLE_OBJ:
                 # note: assumes we're not going to get something that's iterable and callable at the same time (except types ... which aren't actually iterable, they may just have __iter__)
                 assert "__iter__" not in serial_dict[VALUE][
-                    ATTRS] or "type"== serial_dict[VALUE][TYPE], "Found something callable and iterable at the same time"
+                    ATTRS] or "type" == serial_dict[VALUE][TYPE], "Found something callable and iterable at the same time"
                 return BridgedCallable(self, serial_dict[VALUE])
             elif "__iter__" in serial_dict[VALUE][ATTRS] and ("__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]):
                 return BridgedIterableIterator(self, serial_dict[VALUE])
@@ -522,7 +535,8 @@ class BridgeConn(object):
     def get_socket(self):
         with self.comms_lock:
             if self.sock is None:
-                self.logger.debug("Creating socket to {}:{}".format(self.host, self.port))
+                self.logger.debug(
+                    "Creating socket to {}:{}".format(self.host, self.port))
                 # Create a socket (SOCK_STREAM means a TCP socket)
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.sock.settimeout(10)
@@ -688,6 +702,20 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
+    def remote_get_all(self, handle):
+        self.logger.debug("remote_get_all {}".format(handle))
+        command_dict = {CMD: GET_ALL, ARGS: {HANDLE: handle}}
+        return self.deserialize_from_dict(self.send_cmd(command_dict))
+
+    def local_get_all(self, args_dict):
+        handle = args_dict[HANDLE]
+        self.logger.debug("local_get_all {}".format(handle))
+
+        target_obj = self.get_object_by_handle(handle)
+        result = {name: getattr(target_obj, name) for name in dir(target_obj)}
+
+        return self.serialize_to_dict(result)
+
     def handle_command(self, message_dict):
 
         response_dict = {VERSION: COMMS_VERSION_2,
@@ -709,6 +737,8 @@ class BridgeConn(object):
             response_dict[RESULT] = self.local_import(command_dict[ARGS])
         elif command_dict[CMD] == TYPE:
             response_dict[RESULT] = self.local_type_create(command_dict[ARGS])
+        elif command_dict[CMD] == GET_ALL:
+            response_dict[RESULT] = self.local_get_all(command_dict[ARGS])
 
         self.logger.debug("Responding with {}".format(response_dict))
         return json.dumps(response_dict).encode("utf-8")
@@ -807,7 +837,7 @@ class BridgedObject(object):
     def __getattribute__(self, attr):
         if attr.startswith(BRIDGE_PREFIX) or attr == "__class__":
             result = object.__getattribute__(self, attr)
-        elif attr == "__mro_entries__":  # ignore mro entries - only being called if we're creating a class based of
+        elif attr == "__mro_entries__":  # ignore mro entries - only being called if we're creating a class based off a bridged object
             raise AttributeError()
         else:
             result = self._bridged_get(attr)
@@ -824,6 +854,18 @@ class BridgedObject(object):
             return self._bridge_overrides[name]
 
         return self._bridge_conn.remote_get(self._bridge_handle, name)
+
+    def _bridged_get_all(self):
+        """ As an optimisation, get all of the attributes at once and store them as overrides.
+
+            Should only use this for objects that are unlikely to have their attributes change values (e.g., imported modules),
+            otherwise you won't be able to get the updated values without clearing the override
+        """
+        attrs_dict = self._bridge_conn.remote_get_all(self._bridge_handle)
+
+        # the result is a dictionary of attributes and their bridged objects. set them as overrides in the bridged object
+        for name, value in attrs_dict.items():
+            self._bridge_set_override(name, value)
 
     def _bridged_set(self, name, value):
         if name in self._bridge_overrides:
@@ -895,6 +937,7 @@ class BridgedCallable(BridgedObject):
     def __repr__(self):
         return "<BridgedCallable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
 
+
 class BridgedIterable(BridgedObject):
     def __iter__(self):
         return self._bridged_get("__iter__")()
@@ -914,8 +957,8 @@ class BridgedIterator(BridgedObject):
                 raise StopIteration
             # otherwise, something went bad - reraise
             raise
-            
-    next = __next__ # handle being run in a py2 environment
+
+    next = __next__  # handle being run in a py2 environment
 
     def __repr__(self):
         return "<BridgedIterator({}, handle={})>".format(self._bridge_type, self._bridge_handle)
@@ -924,5 +967,3 @@ class BridgedIterator(BridgedObject):
 class BridgedIterableIterator(BridgedIterator, BridgedIterable):
     """ Common enough that iterables return themselves from __iter__ """
     pass
-
-
