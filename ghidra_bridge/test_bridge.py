@@ -77,7 +77,7 @@ class TestBridge(unittest.TestCase):
     # callback as key func in list.sort
 
     def test_call_kwargs(self):
-        pass
+        self.skipTest("Not implemented yet")
 
     def test_get(self):
         mod = TestBridge.test_bridge.remote_import("uuid")
@@ -147,7 +147,7 @@ class TestBridge(unittest.TestCase):
 
     def test_serialize_deserialize_bridge_object(self):
         # bridge objects TODO
-        pass
+        self.skipTest("Not implemented yet")
 
     def test_none_result(self):
         mod = TestBridge.test_bridge.remote_import("re")
@@ -159,7 +159,7 @@ class TestBridge(unittest.TestCase):
         self.assertTrue(remote_callable("abar") is None)
 
     def test_exception(self):
-        pass
+        self.skipTest("Not implemented yet")
 
     def test_callback(self):
         """ Test we correctly handle calling back to here from across the bridge """
@@ -184,7 +184,7 @@ class TestBridge(unittest.TestCase):
         it_values = list(remote_it)
 
         self.assertEqual(list(range(4, 10, 2)), it_values)
-        
+
     def test_remote_iterable_for(self):
         """ Test we can access values from a remote iterable with a for loop """
         mod = TestBridge.test_bridge.remote_import("__main__")

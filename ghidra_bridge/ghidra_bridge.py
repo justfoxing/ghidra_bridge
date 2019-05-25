@@ -79,79 +79,84 @@ class GhidraBridge():
             remote_main._bridged_get_all()
 
         if self.interactive_mode:
-            # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
-            tool = remote_main.state.getTool()  # note: tool shouldn't change
-            plugin = find_ProgramPlugin(tool)
-            locn = plugin.getProgramLocation()
-            # set the values as overrides in the bridged object - this prevents them from being changed in the remote object
-            remote_main._bridge_set_override(
-                "currentAddress", locn.getAddress())
-            remote_main._bridge_set_override(
-                "currentProgram", plugin.getCurrentProgram())
-            remote_main._bridge_set_override("currentLocation", locn)
-            remote_main._bridge_set_override(
-                "currentSelection", plugin.getProgramSelection())
-            remote_main._bridge_set_override(
-                "currentHighlight", plugin.getProgramHighlight())
+            # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a ProgramPlugin
+            if remote_main.state.getTool() is None:
+                self.interactive_mode = False
+                self.bridge.logger.warning("Disabling interactive mode - not supported when running against a headless Ghidra")
+            else:
+                # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
+                tool = remote_main.state.getTool()  # note: tool shouldn't change
+                plugin = find_ProgramPlugin(tool)
+                locn = plugin.getProgramLocation()
+                # set the values as overrides in the bridged object - this prevents them from being changed in the remote object
+                remote_main._bridge_set_override(
+                    "currentAddress", locn.getAddress())
+                remote_main._bridge_set_override(
+                    "currentProgram", plugin.getCurrentProgram())
+                remote_main._bridge_set_override("currentLocation", locn)
+                remote_main._bridge_set_override(
+                    "currentSelection", plugin.getProgramSelection())
+                remote_main._bridge_set_override(
+                    "currentHighlight", plugin.getProgramHighlight())
 
-            # next, keep a reference to this module for updating these addresses
-            self.flat_api_modules_list.append(weakref.ref(remote_main))
+                # next, keep a reference to this module for updating these addresses
+                self.flat_api_modules_list.append(weakref.ref(remote_main))
 
-            # next, overwrite getState with the getState_fix
-            def getState_fix():
-                """ Used when in interactive mode - instead of calling the remote getState, 
-                    relies on the fact that the current* variables are being updated and creates
-                    a GhidraState based on them.
+                # next, overwrite getState with the getState_fix
+                def getState_fix():
+                    """ Used when in interactive mode - instead of calling the remote getState, 
+                        relies on the fact that the current* variables are being updated and creates
+                        a GhidraState based on them.
 
-                    This avoids resetting the GUI to the original values in the remote getState
-                """
-                return remote_main.ghidra.app.script.GhidraState(tool, tool.getProject(), remote_main.currentProgram, remote_main.currentLocation, remote_main.currentSelection, remote_main.currentHighlight)
-            remote_main._bridge_set_override("getState", getState_fix)
-
-            # finally, install a listener for updates from the GUI events
-            if self.interactive_listener is None:
-                def update_vars(currentProgram=None, currentLocation=None, currentSelection=None, currentHighlight=None):
-                    """ For all the namespaces and modules we've returned, update the current* variables that have changed
+                        This avoids resetting the GUI to the original values in the remote getState
                     """
-                    # clear out any dead references
-                    self.flat_api_modules_list = [
-                        module for module in self.flat_api_modules_list if module() is not None]
+                    return remote_main.ghidra.app.script.GhidraState(tool, tool.getProject(), remote_main.currentProgram, remote_main.currentLocation, remote_main.currentSelection, remote_main.currentHighlight)
+                remote_main._bridge_set_override("getState", getState_fix)
 
-                    update_list = [
-                        module() for module in self.flat_api_modules_list]
-                    for update in update_list:
-                        # possible that a module might have been removed between the clear out and preparing the update list
-                        if update is not None:
+                # finally, install a listener for updates from the GUI events
+                if self.interactive_listener is None:
+                    def update_vars(currentProgram=None, currentLocation=None, currentSelection=None, currentHighlight=None):
+                        """ For all the namespaces and modules we've returned, update the current* variables that have changed
+                        """
+                        # clear out any dead references
+                        self.flat_api_modules_list = [
+                            module for module in self.flat_api_modules_list if module() is not None]
+
+                        update_list = [
+                            module() for module in self.flat_api_modules_list]
+                        for update in update_list:
+                            # possible that a module might have been removed between the clear out and preparing the update list
+                            if update is not None:
+                                if currentProgram is not None:
+                                    update.currentProgram = currentProgram
+                                if currentLocation is not None:
+                                    # match the order of updates in GhidraScript - location before address
+                                    update.currentLocation = currentLocation
+                                    update.currentAddress = currentLocation.getAddress()
+                                if currentSelection is not None:
+                                    update.currentSelection = currentSelection if not currentSelection.isEmpty() else None
+                                if currentHighlight is not None:
+                                    update.currentHighlight = currentHighlight if not currentHighlight.isEmpty() else None
+
+                        # repeat the same for the namespace dictionaries
+                        for update_dict in self.namespace_list:
                             if currentProgram is not None:
-                                update.currentProgram = currentProgram
+                                update_dict["currentProgram"] = currentProgram
                             if currentLocation is not None:
                                 # match the order of updates in GhidraScript - location before address
-                                update.currentLocation = currentLocation
-                                update.currentAddress = currentLocation.getAddress()
+                                update_dict["currentLocation"] = currentLocation
+                                update_dict["currentAddress"] = currentLocation.getAddress(
+                                )
                             if currentSelection is not None:
-                                update.currentSelection = currentSelection if not currentSelection.isEmpty() else None
+                                update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty(
+                                ) else None
                             if currentHighlight is not None:
-                                update.currentHighlight = currentHighlight if not currentHighlight.isEmpty() else None
+                                update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty(
+                                ) else None
 
-                    # repeat the same for the namespace dictionaries
-                    for update_dict in self.namespace_list:
-                        if currentProgram is not None:
-                            update_dict["currentProgram"] = currentProgram
-                        if currentLocation is not None:
-                            # match the order of updates in GhidraScript - location before address
-                            update_dict["currentLocation"] = currentLocation
-                            update_dict["currentAddress"] = currentLocation.getAddress(
-                            )
-                        if currentSelection is not None:
-                            update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty(
-                            ) else None
-                        if currentHighlight is not None:
-                            update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty(
-                            ) else None
-
-                # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
-                self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
-                    remote_main.state.getTool(), update_vars)
+                    # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
+                    self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
+                        remote_main.state.getTool(), update_vars)
 
         if namespace is not None:
             # add a special var to the namespace to track what we add, so we can remove it easily later
