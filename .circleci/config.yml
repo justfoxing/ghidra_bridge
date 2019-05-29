@@ -4,16 +4,22 @@ workflows:
   version: 2
   test-build-release:
     jobs:
-      - test
+      - test:
+          filters:
+            tags:
+              only: /.*/
       - build:
           requires:
             - test
+          filters:
+            tags:
+              only: /.*/
       - release-pypi:
           requires:
             - build
           filters:
             tags:
-              only: /[0-9]+(\.[0-9]+)*/
+              only: /^\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
       - release-github:
@@ -21,7 +27,7 @@ workflows:
             - build
           filters:
             tags:
-              only: /[0-9]+(\.[0-9]+)*/
+              only: /^\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
 jobs:
@@ -94,15 +100,15 @@ jobs:
       - run:
           name: upload to pypi
           command: |
-            twine upload ./workspace/dist/*
+            python3 -m twine upload ./workspace/dist/*
             
   release-github:
     docker:
       - image: cibuilds/github:0.12
     steps:
+      - checkout
       - attach_workspace:
           at: ./workspace
-      - checkout
       - run:
           name: upload to github
           command: |
