@@ -18,32 +18,40 @@ pip install ghidra_bridge
 4. From the client python:
 ```
 import ghidra_bridge
+with ghidra_bridge.GhidraBridge(namespace=globals()):
+    print(getState().getCurrentAddress().getOffset())
+    ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
+```
+or
+```
+import ghidra_bridge
 b = ghidra_bridge.GhidraBridge(namespace=globals()) # creates the bridge and loads the flat API into the global namespace
 print(getState().getCurrentAddress().getOffset())
 # ghidra module implicitly loaded at the same time as the flat API
 ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 
-or
+Interactive mode
+=====================
+Normally, Ghidra scripts get an instance of the Ghidra state and current\* variables (currentProgram, currentAddress, etc) when first started, and it doesn't update while the script runs. However, if you run the Ghidra Python interpreter, that updates its state with every command, so that currentAddress always matches the GUI.
 
-```
-import ghidra_bridge
-with ghidra_bridge.GhidraBridge(namespace=globals()):
-    print(getState().getCurrentAddress().getOffset())
-    ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
-```
+To reflect this, GhidraBridge will automatically attempt to determine if you're running the client in an interactive environment (e.g., the Python interpreter, iPython) or just from a script. If it's an interactive environment, it'll register an event listener with Ghidra and perform some dubious behind-the-scenes shenanigans to make sure that the state is updated with GUI changes to behave like the Ghidra Python interpreter. 
+
+You shouldn't have to care about this, but if for some reason the auto-detection doesn't give you the result you need, you can specify the boolean interactive_mode argument when creating your client GhidraBridge to force it on or off as required.
 
 How it works
 =====================
-bridge.py contains a py2/3 compatible python object RPC proxy. Each python environment being bridged sets up its own proxy, serving on one port, and communicating with the other environment on a different port. The bridge provides a handful of commands to carry out remote operations against python objects in the other environment.
+bridge.py contains a py2/3 compatible python object RPC proxy. One python environment sets up a server on a port, which clients connect to. The bridge provides a handful of commands to carry out remote operations against python objects in the other environment.
 
 A typical first step is remote_import() with a module to load in the target environment. This will make the RPC call to the remote bridge, which will load the module, then create a BridgeHandle to keep it alive and reference it across the bridge. It'll then return it to the local bridge, along with a list of the callable and non-callable attributes of the module.
 
-At the local bridge, this will be deserialized into a BridgedObject, which overrides \__getattribute__ and \__setattr__ to catch any get/set to the attribute fields, and proxy them back across to the remote bridge, using the bridge handle reference so it knows which module (or other object) we're talking about.
+At the local bridge, this will be deserialized into a BridgedObject, which overrides \_\_getattribute\_\_ and \_\_setattr\_\_ to catch any get/set to the attribute fields, and proxy them back across to the remote bridge, using the bridge handle reference so it knows which module (or other object) we're talking about.
 
-The \__getattribute__ override also affects callables, so doing bridged_obj.func() actually returns a BridgedCallable object, which is then invoked (along with any args/kwargs in use). This packs the call parameters off to the remote bridge, which identifies the appropriate object and invokes the call against it, then returns the result.
+The \_\_getattribute\_\_ override also affects callables, so doing bridged_obj.func() actually returns a BridgedCallable object, which is then invoked (along with any args/kwargs in use). This packs the call parameters off to the remote bridge, which identifies the appropriate object and invokes the call against it, then returns the result.
 
-The bridges are symmetric, so the local bridge is able to send references to local python objects to the remote bridge, and have them used over there, with interactions being sent back to the local bridge (e.g., providing a callback function as an argument should work).
+The bridges are symmetric, so the local bridge is able to send references to local python objects to the remote bridge, and have them used over there, with interactions being sent back to the local bridge (e.g., providing a callback function as an argument works).
+
+Finally, there's a few other miscellaneous features to make life easier - bridged objects which are python iterators/iterables will behave as iterators/iterables in the remote environment, and bridged objects representing types can be inherited from to make your own subclasses of them (note that this will actually create the subclass in the remote environment - this is designed so you can create types to implement some of Ghidra's Java interfaces for callbacks/listeners/etc, so it was easier to make sure they behave if they're created in the Jython environment).
 
 Design principles
 =====================
@@ -53,12 +61,14 @@ Design principles
 
 Tested
 =====================
-* Tested and working on Ghidra 9.0.2(Jython 2.7.1) <-> Python 3.6.5 on Windows
+* Tested and working on Ghidra 9.0.4(Jython 2.7.1) <-> Python 3.7.3 on Windows
 * Automatically tested on Ghidra 9.0(Jython 2.7.1) <-> Python 3.5.3 on Linux (bskaggs/ghidra docker image)
 
 TODO
 =====================
+* Ghidra plugin for server control (cleaner start/stop, port selection, easy packaging/install)
 * Exceptions - pull traceback info in the exceptions we handle for pushing back
 * Better transport/serialization (JSON/TCP just feels wrong)
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
 * Examples
+* Better threadpool control (don't keep all threads around forever, allow some to die off)
