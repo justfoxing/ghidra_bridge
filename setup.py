@@ -1,12 +1,14 @@
 import setuptools
+import subprocess
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="ghidra_bridge",
-    version="0.0.2",
+    version=subprocess.check_output("git describe", shell=True).decode("utf-8").strip(),
     author="justfoxing",
+    author_email="justfoxingprojects@gmail.com",
     description="RPC bridge from Python to Ghidra Jython",
     long_description=long_description,
     long_description_content_type="text/markdown",

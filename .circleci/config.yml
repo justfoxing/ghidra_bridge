@@ -8,11 +8,59 @@ workflows:
       - build:
           requires:
             - test
-
+      - release-pypi:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /[0-9]+(\.[0-9]+)*/
+            branches:
+              ignore: /.*/
+      - release-github:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /[0-9]+(\.[0-9]+)*/
+            branches:
+              ignore: /.*/
 jobs:
+  test:
+    docker:
+      - image: bskaggs/ghidra
+        user: root
+        command: bash
+
+    steps:
+      - run:
+          name: Setup git and python3 environment
+          command: |
+            apt-get update || apt-get update 
+            apt-get install -y git python3 python3-pip
+            pip3 install nose
+
+      - checkout:
+          path: /tmp/ghidra_bridge
+        
+      - run:
+          name: Spawn ghidra bridge server and run tests
+          command: |
+            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
+            ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
+            cd /tmp/ghidra_bridge
+            mkdir test-reports
+            nosetests --with-xunit --xunit-file=/tmp/ghidra_bridge/test-reports/nosetests.xml
+            python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge
+            
+      - store_test_results:
+          path: /tmp/ghidra_bridge/test-reports
+          
+      - store_artifacts:
+          path: /tmp/ghidra_bridge/test-reports
+            
   build:
     docker:
-      - image: circleci/python:3.6.1
+      - image: circleci/python:3.7.2
 
     working_directory: ~/repo
 
@@ -27,30 +75,37 @@ jobs:
 
       - store_artifacts:
           path: dist
-
-  test:
+          
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/
+  
+  release-pypi:
     docker:
-      - image: bskaggs/ghidra
-        user: root
-        command: bash
-
+      - image: circleci/python:3.7.2
     steps:
       - run:
-          name: Setup git and python3 environment
+          name: Get twine
           command: |
-            apt-get update || apt-get update 
-            apt-get install -y git python3 python3-pip
-
-      - checkout:
-          path: /tmp/ghidra_bridge
-        
+            pip3 install --user --upgrade twine
+      - attach_workspace:
+          at: ./workspace     
       - run:
-          name: Run tests 
+          name: upload to pypi
           command: |
-            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
-            ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
-            pip3 install nose
-            cd /tmp/ghidra_bridge
-            nosetests --with-xunit # run the python unittests
-            python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge
+            twine upload ./workspace/dist/*
+            
+  release-github:
+    docker:
+      - image: cibuilds/github:0.12
+    steps:
+      - attach_workspace:
+          at: ./workspace
+      - checkout
+      - run:
+          name: upload to github
+          command: |
+            VERSION=$(git describe)
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./workspace/dist/            
         
