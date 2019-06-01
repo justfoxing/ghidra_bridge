@@ -89,6 +89,8 @@ BRIDGE_PREFIX = "_bridge"
 MIN_SUPPORTED_COMMS_VERSION = COMMS_VERSION_2
 MAX_SUPPORTED_COMMS_VERSION = COMMS_VERSION_2
 
+DEFAULT_RESPONSE_TIMEOUT = 1  # seconds
+
 
 class BridgeException(Exception):
     pass
@@ -303,12 +305,11 @@ class BridgeCommandHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         """ handle a new client connection coming in - continue trying to read/service requests in a loop until we fail to send/recv """
-        self.server.bridge.logger.info(
             "Handling connection from {}".format(self.request.getpeername()))
         try:
             # run the recv loop directly
             BridgeReceiverThread(BridgeConn(
-                self.server.bridge, self.request)).run()
+                self.server.bridge, self.request, response_timeout=self.server.bridge.response_timeout)).run()
         except Exception:
             # something's failed - most likely, the client has closed the connection
             self.server.bridge.logger.info(
@@ -397,9 +398,7 @@ class BridgeResponseManager(object):
 class BridgeConn(object):
     """ Internal class, representing a connection to a remote bridge that serves our requests """
 
-    RESPONSE_TIMEOUT = 1  # seconds
-
-    def __init__(self, bridge, sock=None, connect_to_host=None, connect_to_port=None):
+    def __init__(self, bridge, sock=None, connect_to_host=None, connect_to_port=None, response_timeout=DEFAULT_RESPONSE_TIMEOUT):
         """ Set up the bridge connection - only instantiates a connection as needed """
         self.host = connect_to_host
         self.port = connect_to_port
@@ -414,6 +413,7 @@ class BridgeConn(object):
         self.handle_lock = threading.Lock()
 
         self.response_mgr = BridgeResponseManager()
+        self.response_timeout = response_timeout
 
     def __del__(self):
         """ On teardown, make sure we close our socket to the remote bridge """
@@ -492,7 +492,7 @@ class BridgeConn(object):
     def deserialize_from_dict(self, serial_dict):
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
-        elif serial_dict[TYPE] == FLOAT: 
+        elif serial_dict[TYPE] == FLOAT:
             return float(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
             return serial_dict[VALUE] == "True"
@@ -571,7 +571,7 @@ class BridgeConn(object):
             result = {}
             # wait for the response
             response_dict = self.response_mgr.get_response(
-                cmd_id, timeout=self.RESPONSE_TIMEOUT)
+                cmd_id, timeout=self.response_timeout)
 
             if response_dict is not None:
                 if RESULT in response_dict:
@@ -755,11 +755,12 @@ class BridgeServer(threading.Thread):
         Like a thread, so call run() to run directly, or start() to run on a background thread
     """
 
-    def __init__(self, server_host=DEFAULT_HOST, server_port=0, loglevel=None):
+    def __init__(self, server_host=DEFAULT_HOST, server_port=0, loglevel=None, response_timeout=DEFAULT_RESPONSE_TIMEOUT):
         """ Set up the bridge.
 
             server_host/port: host/port to listen on to serve requests. If not specified, defaults to 127.0.0.1:0 (random port - use get_server_info() to find out where it's serving)
             loglevel - what messages to log
+            response_timeout - how long to wait for a response before throwing an exception, in seconds
         """
         super(BridgeServer, self).__init__()
 
@@ -778,6 +779,7 @@ class BridgeServer(threading.Thread):
             loglevel = logging.CRITICAL+1
 
         self.logger.setLevel(loglevel)
+        self.response_timeout = response_timeout
 
     def get_server_info(self):
         """ return where the server is serving on """
@@ -802,10 +804,11 @@ class BridgeServer(threading.Thread):
 class BridgeClient(object):
     """ Python2Python RPC bridge client """
 
-    def __init__(self, connect_to_host=DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None):
+    def __init__(self, connect_to_host=DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, response_timeout=DEFAULT_RESPONSE_TIMEOUT):
         """ Set up the bridge client
             connect_to_host/port - host/port to connect to run commands. 
             loglevel - what messages to log
+            response_timeout - how long to wait for a response before throwing an error, in seconds
         """
         logging.basicConfig()
         self.logger = logging.getLogger(__name__)
@@ -815,7 +818,7 @@ class BridgeClient(object):
         self.logger.setLevel(loglevel)
 
         self.client = BridgeConn(
-            self, sock=None, connect_to_host=connect_to_host, connect_to_port=connect_to_port)
+            self, sock=None, connect_to_host=connect_to_host, connect_to_port=connect_to_port, response_timeout=response_timeout)
 
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)

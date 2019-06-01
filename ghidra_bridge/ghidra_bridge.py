@@ -31,7 +31,7 @@ def find_ProgramPlugin(tool):
 
 
 class GhidraBridge():
-    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=bridge.DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None):
+    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=bridge.DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
         """ Set up a bridge. Default settings connect to the default ghidra bridge server,
 
         If namespace is specified (e.g., locals() or globals()), automatically calls get_flat_api() with that namespace. 
@@ -42,9 +42,11 @@ class GhidraBridge():
         you can force it to True or False if you need to. False is normal ghidra script behaviour 
         (currentAddress/getState() etc locked to the values when the script started. True is closer to the 
         behaviour in the Ghidra Jython shell - current*/getState() reflect the current values in the GUI
+
+        response_timeout is how long to wait for a response before throwing an exception, in seconds
         """
         self.bridge = bridge.BridgeClient(
-            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel)
+            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout)
 
         if interactive_mode is None:
             # from https://stackoverflow.com/questions/2356399/tell-if-python-is-in-interactive-mode, sys.ps1 only present in interactive interpreters
@@ -82,7 +84,8 @@ class GhidraBridge():
             # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a ProgramPlugin
             if remote_main.state.getTool() is None:
                 self.interactive_mode = False
-                self.bridge.logger.warning("Disabling interactive mode - not supported when running against a headless Ghidra")
+                self.bridge.logger.warning(
+                    "Disabling interactive mode - not supported when running against a headless Ghidra")
             else:
                 # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
                 tool = remote_main.state.getTool()  # note: tool shouldn't change
