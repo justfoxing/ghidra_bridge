@@ -178,6 +178,11 @@ class GhidraBridge():
                         namespace[attr] = remote_attr
                         # record what we added to the namespace
                         namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK][attr] = remote_attr
+
+                # overload isinstance with bridged_isinstance, so checking bridged objects are of bridged types will just work
+                namespace["isinstance"] = bridge.bridged_isinstance
+                namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK]["isinstance"] = bridge.bridged_isinstance
+
             except Exception:
                 self.unload_flat_api(namespace)
                 raise

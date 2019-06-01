@@ -19,6 +19,7 @@ import time
 import weakref
 import functools
 
+
 # from six.py's strategy
 INTEGER_TYPES = None
 try:
@@ -900,13 +901,21 @@ def bridged_isinstance(test_object, class_or_tuple):
 
         Currently, don't have a good way of handling a mix of bridge/non-bridge, so will just return false
     """
+    # make sure we have the real isinstance, just in case we've overridden it (e.g., with ghidra_bridge namespace)
+    builtin_isinstance = None
+    try:
+        from builtins import isinstance as builtin_isinstance  # python3
+    except:
+        # try falling back to python2 syntax
+        from __builtin__ import isinstance as builtin_isinstance
+
     result = False
 
     # force class_or_tuple to be a tuple - just easier that way
     if _is_bridged_object(class_or_tuple):
         # bridged object, so not a tuple
         class_or_tuple = (class_or_tuple,)
-    if not isinstance(class_or_tuple, tuple):
+    if not builtin_isinstance(class_or_tuple, tuple):
         # local clazz, not a tuple
         class_or_tuple = (class_or_tuple,)
 
@@ -924,7 +933,7 @@ def bridged_isinstance(test_object, class_or_tuple):
         new_tuple = tuple(
             clazz for clazz in class_or_tuple if not _is_bridged_object(clazz))
 
-        result = isinstance(test_object, new_tuple)
+        result = builtin_isinstance(test_object, new_tuple)
 
     return result
 

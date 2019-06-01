@@ -98,3 +98,9 @@ class TestGhidraBridge(unittest.TestCase):
 
         # make sure it's no longer present
         self.assertTrue("currentAddress" not in globals())
+
+    def test_isinstance_fix(self):
+        """ check that we automatically fix up isinstance when using namespace, so we can isinstance bridged objects """
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
+            self.assertTrue(isinstance(
+                currentAddress, ghidra.program.model.address.Address))
