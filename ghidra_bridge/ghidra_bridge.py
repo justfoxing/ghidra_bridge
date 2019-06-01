@@ -14,20 +14,10 @@ EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess",
 GHIDRA_BRIDGE_NAMESPACE_TRACK = "__ghidra_bridge_namespace_track__"
 
 
-def find_ProgramPlugin(tool):
-    """ Use the provided tool (probably something like CodeBrowser) to find any loaded plugin that extends ProgramPlugin, 
-        which gives access to useful state like the current address, etc 
-    """
-    plugins = tool.getManagedPlugins()
-    plugin = None
-    for i in range(0, plugins.size()):
-        plugin = plugins.get(i)
-        if "getProgramLocation" in plugin._bridge_attrs:
-            # it's a program plugin! that'll work just fine
-            return plugin
-
-    raise Exception(
-        "Couldn't find a ProgramPlugin in {} from {}".format(plugins, tool))
+def get_listing_panel(tool, ghidra):
+    """ Get the code listing UI element, so we can get up-to-date location/highlight/selection """
+    cvs = tool.getService(ghidra.app.services.CodeViewerService)
+    return cvs.getListingPanel()
 
 
 class GhidraBridge():
@@ -81,7 +71,7 @@ class GhidraBridge():
             remote_main._bridged_get_all()
 
         if self.interactive_mode:
-            # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a ProgramPlugin
+            # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a PluginTool
             if remote_main.state.getTool() is None:
                 self.interactive_mode = False
                 self.bridge.logger.warning(
@@ -89,18 +79,18 @@ class GhidraBridge():
             else:
                 # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
                 tool = remote_main.state.getTool()  # note: tool shouldn't change
-                plugin = find_ProgramPlugin(tool)
-                locn = plugin.getProgramLocation()
+                listing_panel = get_listing_panel(tool, remote_main.ghidra)
+                locn = listing_panel.getProgramLocation()
                 # set the values as overrides in the bridged object - this prevents them from being changed in the remote object
                 remote_main._bridge_set_override(
                     "currentAddress", locn.getAddress())
                 remote_main._bridge_set_override(
-                    "currentProgram", plugin.getCurrentProgram())
+                    "currentProgram", listing_panel.getProgram())
                 remote_main._bridge_set_override("currentLocation", locn)
                 remote_main._bridge_set_override(
-                    "currentSelection", plugin.getProgramSelection())
+                    "currentSelection", listing_panel.getProgramSelection())
                 remote_main._bridge_set_override(
-                    "currentHighlight", plugin.getProgramHighlight())
+                    "currentHighlight", listing_panel.getProgramHighlight())
 
                 # next, keep a reference to this module for updating these addresses
                 self.flat_api_modules_list.append(weakref.ref(remote_main))

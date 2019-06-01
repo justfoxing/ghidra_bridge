@@ -59,9 +59,10 @@ class TestGhidraBridge(unittest.TestCase):
                 self.skipTest(
                     "This test isn't supported against headless/no tool ghidra, because of how we try to get the most up to date addresses")
             else:
+                listing_panel = ghidra_bridge.ghidra_bridge.get_listing_panel(
+                    state.getTool(), ghidra)
                 # get the actual current address
-                actual_current_addr = ghidra_bridge.ghidra_bridge.find_ProgramPlugin(
-                    state.getTool()).getProgramLocation().getAddress().getOffset()
+                actual_current_addr = listing_panel.getProgramLocation().getAddress().getOffset()
 
                 # record the "current" address as an int
                 curr_addr = currentAddress.getOffset()
@@ -70,8 +71,7 @@ class TestGhidraBridge(unittest.TestCase):
                 state.setCurrentAddress(currentAddress.add(0x10))
 
                 # check the address has changed
-                new_actual_current_addr = ghidra_bridge.ghidra_bridge.find_ProgramPlugin(
-                    state.getTool()).getProgramLocation().getAddress().getOffset()
+                new_actual_current_addr = listing_panel.getProgramLocation().getAddress().getOffset()
                 self.assertNotEqual(actual_current_addr,
                                     new_actual_current_addr)
 
