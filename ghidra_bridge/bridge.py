@@ -182,22 +182,19 @@ class BridgeCommandHandlerThread(threading.Thread):
                     result = self.bridge_conn.handle_command(cmd)
                 except Exception as e:
                     self.bridge_conn.logger.error(
-                        "Unexpected exception: {}".format(e))
+                        "Unexpected exception for {}: {}".format(cmd, e))
 
                 try:
                     write_size_and_data_to_socket(
                         self.bridge_conn.get_socket(), result)
-
-                    cmd = self.threadpool.get_command()  # block, waiting for next command
                 except socket.error:
                     # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk. Don't bother staying around, they're probably dead
-                    pass
+                    break
+                    
+                cmd = self.threadpool.get_command()  # block, waiting for next command
         except ReferenceError:
             # expected, means the connection has been closed and the threadpool cleaned up
             pass
-        finally:
-            self.bridge_conn.logger.error("done")
-
 
 class BridgeCommandHandlerThreadPool(object):
     """ Takes commands and handles spinning up threads to run them. Will keep the threads that are started and reuse them before creating new ones """
