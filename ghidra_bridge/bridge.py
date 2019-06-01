@@ -192,6 +192,9 @@ class BridgeCommandHandlerThread(threading.Thread):
                 except socket.error:
                     # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk. Don't bother staying around, they're probably dead
                     pass
+        except ReferenceError:
+            # expected, means the connection has been closed and the threadpool cleaned up
+            pass
         finally:
             self.bridge_conn.logger.error("done")
 
