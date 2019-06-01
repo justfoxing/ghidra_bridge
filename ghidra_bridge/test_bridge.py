@@ -195,8 +195,72 @@ class TestBridge(unittest.TestCase):
             it_values.append(value)
 
         self.assertEqual(list(range(4, 10, 2)), it_values)
-        
+
     def test_float(self):
         """ Test we can sent a float value """
         remote_time = TestBridge.test_bridge.remote_import("time")
         remote_time.sleep(0.1)
+
+    def test_is_bridged_object(self):
+        remote_uuid = TestBridge.test_bridge.remote_import("uuid")
+
+        remote_obj = remote_uuid.uuid4()
+        local_obj = uuid.uuid4()
+
+        self.assertTrue(bridge._is_bridged_object(remote_obj))
+        self.assertFalse(bridge._is_bridged_object(local_obj))
+
+    def test_bridged_isinstance(self):
+        mod = TestBridge.test_bridge.remote_import("__main__")
+        remote_float = mod.__builtins__.float
+        remote_int = mod.__builtins__.int
+        remote_uuid = TestBridge.test_bridge.remote_import("uuid")
+        remote_class = remote_uuid.UUID
+        remote_obj = remote_uuid.uuid4()
+        local_class = uuid.UUID
+        local_obj = uuid.uuid4()
+
+        # local obj, local class
+        self.assertTrue(bridge.bridged_isinstance(local_obj, local_class))
+        self.assertFalse(bridge.bridged_isinstance(local_obj, float))
+
+        # local obj, fully local tuple
+        self.assertTrue(bridge.bridged_isinstance(
+            local_obj, (float, local_class)))
+        self.assertFalse(bridge.bridged_isinstance(local_obj, (float, int)))
+
+        # local obj, mixed tuple
+        self.assertTrue(bridge.bridged_isinstance(
+            local_obj, (remote_class, float, local_class)))
+        self.assertFalse(bridge.bridged_isinstance(
+            local_obj, (remote_float, float, int)))
+
+        # local obj, remote class
+        self.assertFalse(bridge.bridged_isinstance(local_obj, remote_class))
+
+        # local obj, fully remote tuple
+        self.assertFalse(bridge.bridged_isinstance(
+            local_obj, (remote_float, remote_class)))
+
+        # remote obj, local class
+        self.assertFalse(bridge.bridged_isinstance(remote_obj, local_class))
+
+        # remote obj, fully local tuple
+        self.assertFalse(bridge.bridged_isinstance(
+            remote_obj, (float, local_class)))
+
+        # remote obj, mixed tuple
+        self.assertTrue(bridge.bridged_isinstance(
+            remote_obj, (remote_class, float, local_class)))
+        self.assertFalse(bridge.bridged_isinstance(
+            remote_obj, (remote_float, float, int)))
+
+        # remote obj, remote class
+        self.assertTrue(bridge.bridged_isinstance(remote_obj, remote_class))
+        self.assertFalse(bridge.bridged_isinstance(remote_obj, remote_float))
+
+        # remote obj, fully remote tuple
+        self.assertTrue(bridge.bridged_isinstance(
+            remote_obj, (remote_float, remote_class)))
+        self.assertFalse(bridge.bridged_isinstance(
+            remote_obj, (remote_float, remote_int)))

@@ -71,6 +71,7 @@ ARGS = "args"
 GET = "get"
 GET_ALL = "get_all"
 SET = "set"
+ISINSTANCE = "isinstance"
 CALL = "call"
 IMPORT = "import"
 DEL = "del"
@@ -733,6 +734,50 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
+    def remote_isinstance(self, test_object, class_or_tuple):
+        self.logger.debug("remote_isinstance({}, {})".format(
+            test_object, class_or_tuple))
+
+        check_class_tuple = None
+        # if we're not checking against a tuple, force it into one
+        if not _is_bridged_object(class_or_tuple):
+            # local - probably a tuple already
+            if not isinstance(class_or_tuple, tuple):
+                # it's not :X
+                raise Exception(
+                    "Can't use remote_isinstance on a non-bridged class: {}".format(class_or_tuple))
+            else:
+                check_class_tuple = class_or_tuple
+        else:
+            # single bridged, just wrap in a tuple
+            check_class_tuple = (class_or_tuple,)
+
+        command_dict = {CMD: ISINSTANCE, ARGS: self.serialize_to_dict(
+            {OBJ: test_object, TUPLE: check_class_tuple})}
+        return self.deserialize_from_dict(self.send_cmd(command_dict))
+
+    def local_isinstance(self, args_dict):
+        args = self.deserialize_from_dict(args_dict)
+        test_object = args[OBJ]
+        check_class_tuple = args[TUPLE]
+
+        self.logger.debug("local_isinstance({},{})".format(
+            test_object, check_class_tuple))
+
+        # make sure every element is a local object on this side
+        if _is_bridged_object(test_object):
+            raise Exception(
+                "Can't use local_isinstance on a bridged object: {}".format(test_object))
+
+        for clazz in check_class_tuple:
+            if _is_bridged_object(clazz):
+                raise Exception(
+                    "Can't use local_isinstance on a bridged class: {}".format(clazz))
+
+        result = isinstance(test_object, check_class_tuple)
+
+        return self.serialize_to_dict(result)
+
     def handle_command(self, message_dict):
 
         response_dict = {VERSION: COMMS_VERSION_2,
@@ -756,6 +801,8 @@ class BridgeConn(object):
             response_dict[RESULT] = self.local_type_create(command_dict[ARGS])
         elif command_dict[CMD] == GET_ALL:
             response_dict[RESULT] = self.local_get_all(command_dict[ARGS])
+        elif command_dict[CMD] == ISINSTANCE:
+            response_dict[RESULT] = self.local_isinstance(command_dict[ARGS])
 
         self.logger.debug("Responding with {}".format(response_dict))
         return json.dumps(response_dict).encode("utf-8")
@@ -838,6 +885,50 @@ class BridgeClient(object):
     # TODO shutdown
 
 
+def _is_bridged_object(object):
+    """ Utility function to detect if an object is bridged or not. 
+
+        Not recommended for use outside this class, because it breaks the goal that you shouldn't
+        need to know if something is bridged or not
+    """
+    return hasattr(object, "_bridge_type")
+
+
+def bridged_isinstance(test_object, class_or_tuple):
+    """ Utility function to wrap isinstance to handle bridged objects. Behaves as isinstance, but if all the objects/classes
+        are bridged, will direct the call over the bridge.
+
+        Currently, don't have a good way of handling a mix of bridge/non-bridge, so will just return false
+    """
+    result = False
+
+    # force class_or_tuple to be a tuple - just easier that way
+    if _is_bridged_object(class_or_tuple):
+        # bridged object, so not a tuple
+        class_or_tuple = (class_or_tuple,)
+    if not isinstance(class_or_tuple, tuple):
+        # local clazz, not a tuple
+        class_or_tuple = (class_or_tuple,)
+
+    # now is the test_object bridged or not?
+    if _is_bridged_object(test_object):
+        # yes - we need to handle.
+        # remove any non-bridged classes in the tuple
+        new_tuple = tuple(
+            clazz for clazz in class_or_tuple if _is_bridged_object(clazz))
+
+        if new_tuple:  # make sure there's still some things left to check - otherwise, just return false without shooting it over the bridge
+            result = test_object._bridge_isinstance(new_tuple)
+    else:
+        # test_object isn't bridged - remove any bridged classes in the tuple and palm it off to isinstance
+        new_tuple = tuple(
+            clazz for clazz in class_or_tuple if not _is_bridged_object(clazz))
+
+        result = isinstance(test_object, new_tuple)
+
+    return result
+
+
 class BridgedObject(object):
     """ An object you can only interact with on the opposite side of a bridge """
     _bridge_conn = None
@@ -898,6 +989,25 @@ class BridgedObject(object):
 
     def _bridge_clear_override(self, name):
         del self._bridge_overrides[name]
+
+    def _bridge_isinstance(self, bridged_class_or_tuple):
+        """ check whether this object is an instance of the bridged class (or tuple of bridged classes) """
+        # enforce that the bridged_class_or_tuple elements are actually bridged
+        if not _is_bridged_object(bridged_class_or_tuple):
+            # might be a tuple
+            if isinstance(bridged_class_or_tuple, tuple):
+                # check all the elements of the tuple
+                for clazz in bridged_class_or_tuple:
+                    if not _is_bridged_object(clazz):
+                        raise Exception(
+                            "Can't use _bridge_isinstance with non-bridged class {}".format(clazz))
+            else:
+                # nope :x
+                raise Exception(
+                    "Can't use _bridge_isinstance with non-bridged class {}".format(bridged_class_or_tuple))
+
+        # cool, arguments are valid
+        return self._bridge_conn.remote_isinstance(self, bridged_class_or_tuple)
 
     def __del__(self):
         if self._bridge_conn is not None:  # only need to del if this was properly init'd
