@@ -96,6 +96,10 @@ class BridgeException(Exception):
     pass
 
 
+class BridgeClosedException(Exception):
+    pass
+
+
 SIZE_FORMAT = "!I"
 
 
@@ -121,6 +125,9 @@ def read_exactly(sock, num_bytes):
     data = b''
     while num_bytes > 0:
         new_data = sock.recv(num_bytes)
+        if new_data is None:
+            # most likely reason for a none here is the socket being closed on the remote end
+            raise BridgeClosedException()
         num_bytes = num_bytes - len(new_data)
         data += new_data
 
@@ -305,14 +312,19 @@ class BridgeCommandHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         """ handle a new client connection coming in - continue trying to read/service requests in a loop until we fail to send/recv """
+        self.server.bridge.logger.warn(
             "Handling connection from {}".format(self.request.getpeername()))
         try:
             # run the recv loop directly
             BridgeReceiverThread(BridgeConn(
                 self.server.bridge, self.request, response_timeout=self.server.bridge.response_timeout)).run()
-        except Exception:
-            # something's failed - most likely, the client has closed the connection
-            self.server.bridge.logger.info(
+        except BridgeClosedException:
+            pass  # expected - the client has closed the connection
+        except Exception as e:
+            # something weird went wrong?
+            self.server.bridge.logger.exception(e)
+        finally:
+            self.server.bridge.logger.warn(
                 "Closing connection from {}".format(self.request.getpeername()))
             # we're out of the loop now, so the connection object will get told to delete itself, which will remove its references to any objects its holding onto
 
