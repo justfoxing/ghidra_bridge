@@ -123,8 +123,7 @@ class TestBridge(unittest.TestCase):
         # assemble a list of different types
         # Note: we include False now to detect failure to correctly unpack "False" strings into bools
         test_list = [1, 0xFFFFFFFF, True, False, "string", "unicode_string🐉🔍",
-                     (1, 2, 3), [4, 5, 6], {7: 8, 9: 10}, uuid.uuid4(), pow]
-
+                     (1, 2, 3), [4, 5, 6], {7: 8, 9: 10}, uuid.uuid4(), pow, 1.5]
         # send the list in to create a remote list (which comes straight back)s
         created_list = remote_list(test_list)
 
@@ -196,3 +195,8 @@ class TestBridge(unittest.TestCase):
             it_values.append(value)
 
         self.assertEqual(list(range(4, 10, 2)), it_values)
+        
+    def test_float(self):
+        """ Test we can sent a float value """
+        remote_time = TestBridge.test_bridge.remote_import("time")
+        remote_time.sleep(0.1)

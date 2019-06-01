@@ -53,6 +53,7 @@ TUPLE = "tuple"
 LIST = "list"
 DICT = "dict"
 INT = "int"
+FLOAT = "float"
 BOOL = "bool"
 STR = "str"
 BYTES = "bytes"
@@ -451,6 +452,8 @@ class BridgeConn(object):
             serialized_dict = {TYPE: BOOL, VALUE: str(data)}
         elif isinstance(data, INTEGER_TYPES):
             serialized_dict = {TYPE: INT, VALUE: str(data)}
+        elif isinstance(data, float):
+            serialized_dict = {TYPE: FLOAT, VALUE: str(data)}
         elif isinstance(data, STRING_TYPES):  # all strings are coerced to unicode
             serialized_dict = {TYPE: STR, VALUE: base64.b64encode(
                 data.encode("utf-8")).decode("utf-8")}
@@ -489,6 +492,8 @@ class BridgeConn(object):
     def deserialize_from_dict(self, serial_dict):
         if serial_dict[TYPE] == INT:  # int, long
             return int(serial_dict[VALUE])
+        elif serial_dict[TYPE] == FLOAT: 
+            return float(serial_dict[VALUE])
         elif serial_dict[TYPE] == BOOL:
             return serial_dict[VALUE] == "True"
         elif serial_dict[TYPE] == STR:
