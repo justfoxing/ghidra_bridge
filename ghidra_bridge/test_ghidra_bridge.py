@@ -83,3 +83,18 @@ class TestGhidraBridge(unittest.TestCase):
             self.assertTrue("currentAddress" in globals())
 
         self.assertTrue("currentAddress" not in globals())
+
+    def test_namespace_cleanup_with_interactive(self):
+        """ check that we can still remove if the values we add have been updated by interactive mode """
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT, interactive_mode=True):
+            self.assertTrue("currentAddress" in globals())
+
+            # cause currentAddress to change
+            # move the current address
+            state.setCurrentAddress(currentAddress.add(0x10))
+
+            # add a little sleep, so there's enough time for the update to make it back to us (interactive_mode isn't meant to be scripted...)
+            time.sleep(1)
+
+        # make sure it's no longer present
+        self.assertTrue("currentAddress" not in globals())

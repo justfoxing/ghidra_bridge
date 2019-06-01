@@ -141,21 +141,26 @@ class GhidraBridge():
                                 if currentHighlight is not None:
                                     update.currentHighlight = currentHighlight if not currentHighlight.isEmpty() else None
 
-                        # repeat the same for the namespace dictionaries
+                        # repeat the same for the namespace dictionaries, but also make sure we update the tracker so we know what to remove later
                         for update_dict in self.namespace_list:
                             if currentProgram is not None:
                                 update_dict["currentProgram"] = currentProgram
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentProgram"] = update_dict["currentProgram"]
                             if currentLocation is not None:
                                 # match the order of updates in GhidraScript - location before address
                                 update_dict["currentLocation"] = currentLocation
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentLocation"] = update_dict["currentLocation"]
                                 update_dict["currentAddress"] = currentLocation.getAddress(
                                 )
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentAddress"] = update_dict["currentAddress"]
                             if currentSelection is not None:
                                 update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty(
                                 ) else None
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentSelection"] = update_dict["currentSelection"]
                             if currentHighlight is not None:
                                 update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty(
                                 ) else None
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentHighlight"] = update_dict["currentHighlight"]
 
                     # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
                     self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
