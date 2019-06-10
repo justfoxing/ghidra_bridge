@@ -1055,7 +1055,7 @@ class BridgedObject(object):
         return self._bridged_get_type()._bridged_get("__str__")(self)
 
     def __repr__(self):
-        return "<BridgedObject({}, handle={})>".format(self._bridge_type, self._bridge_handle)
+        return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridged_get("__repr__")(), self._bridge_type, self._bridge_handle)
 
     def __dir__(self):
         return dir(super(type(self))) + self._bridge_attrs
@@ -1112,9 +1112,6 @@ class BridgedIterable(BridgedObject):
     def __iter__(self):
         return self._bridged_get("__iter__")()
 
-    def __repr__(self):
-        return "<BridgedIterable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
-
 
 class BridgedIterator(BridgedObject):
     def __next__(self):
@@ -1130,8 +1127,6 @@ class BridgedIterator(BridgedObject):
 
     next = __next__  # handle being run in a py2 environment
 
-    def __repr__(self):
-        return "<BridgedIterator({}, handle={})>".format(self._bridge_type, self._bridge_handle)
 
 
 class BridgedIterableIterator(BridgedIterator, BridgedIterable):
