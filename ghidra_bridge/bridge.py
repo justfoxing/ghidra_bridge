@@ -1057,6 +1057,9 @@ class BridgedObject(object):
     def __repr__(self):
         return "<BridgedObject({}, handle={})>".format(self._bridge_type, self._bridge_handle)
 
+    def __dir__(self):
+        return dir(super(type(self))) + self._bridge_attrs
+
 
 class BridgedCallable(BridgedObject):
     # TODO can we further make BridgedClass a subclass of BridgedCallable? How can we detect? Allow us to pull this class/type hack further away from normal calls
