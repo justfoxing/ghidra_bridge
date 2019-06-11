@@ -104,3 +104,8 @@ class TestGhidraBridge(unittest.TestCase):
         with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
             self.assertTrue(isinstance(
                 currentAddress, ghidra.program.model.address.Address))
+
+    def test_str_javapackage(self):
+        """ Test that we can now call str on javapackage objects """
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
+            self.assertTrue("java package ghidra" in str(ghidra))

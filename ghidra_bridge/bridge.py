@@ -71,6 +71,7 @@ ID = "ID"
 ARGS = "args"
 GET = "get"
 GET_ALL = "get_all"
+CREATE_TYPE = "create_type"
 SET = "set"
 ISINSTANCE = "isinstance"
 CALL = "call"
@@ -190,11 +191,12 @@ class BridgeCommandHandlerThread(threading.Thread):
                 except socket.error:
                     # Other end has closed the socket before we can respond. That's fine, just ask me to do something then ignore me. Jerk. Don't bother staying around, they're probably dead
                     break
-                    
+
                 cmd = self.threadpool.get_command()  # block, waiting for next command
         except ReferenceError:
             # expected, means the connection has been closed and the threadpool cleaned up
             pass
+
 
 class BridgeCommandHandlerThreadPool(object):
     """ Takes commands and handles spinning up threads to run them. Will keep the threads that are started and reuse them before creating new ones """
@@ -697,20 +699,40 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
-    def remote_type_create(self, name, bases, dct):
+    def remote_get_type(self, handle):
         self.logger.debug(
-            "remote_type_create {}, {}, {}".format(name, bases, dct))
-        command_dict = {CMD: TYPE, ARGS: {NAME: name, BASES: self.serialize_to_dict(
+            "remote_get_type {}".format(handle))
+        command_dict = {CMD: TYPE, ARGS: {HANDLE: handle}}
+        return self.deserialize_from_dict(self.send_cmd(command_dict))
+
+    def local_get_type(self, args_dict):
+        handle = args_dict[HANDLE]
+        self.logger.debug("local_get_type {}".format(handle))
+
+        target_obj = self.get_object_by_handle(handle)
+
+        try:
+            result = type(target_obj)
+        except Exception as e:
+            result = e
+            traceback.print_exc()
+
+        return self.serialize_to_dict(result)
+
+    def remote_create_type(self, name, bases, dct):
+        self.logger.debug(
+            "remote_create_type {}, {}, {}".format(name, bases, dct))
+        command_dict = {CMD: CREATE_TYPE, ARGS: {NAME: name, BASES: self.serialize_to_dict(
             bases), DICT: self.serialize_to_dict(dct)}}
         return self.deserialize_from_dict(self.send_cmd(command_dict))
 
-    def local_type_create(self, args_dict):
+    def local_create_type(self, args_dict):
         name = args_dict[NAME]
         bases = self.deserialize_from_dict(args_dict[BASES])
         dct = self.deserialize_from_dict(args_dict[DICT])
 
         self.logger.debug(
-            "local_type_create {}, {}, {}".format(name, bases, dct))
+            "local_create_type {}, {}, {}".format(name, bases, dct))
         result = None
 
         try:
@@ -799,7 +821,9 @@ class BridgeConn(object):
         elif command_dict[CMD] == IMPORT:
             response_dict[RESULT] = self.local_import(command_dict[ARGS])
         elif command_dict[CMD] == TYPE:
-            response_dict[RESULT] = self.local_type_create(command_dict[ARGS])
+            response_dict[RESULT] = self.local_get_type(command_dict[ARGS])
+        elif command_dict[CMD] == CREATE_TYPE:
+            response_dict[RESULT] = self.local_create_type(command_dict[ARGS])
         elif command_dict[CMD] == GET_ALL:
             response_dict[RESULT] = self.local_get_all(command_dict[ARGS])
         elif command_dict[CMD] == ISINSTANCE:
@@ -993,6 +1017,10 @@ class BridgedObject(object):
         else:
             self._bridge_conn.remote_set(self._bridge_handle, name, value)
 
+    def _bridged_get_type(self):
+        """ Get a bridged object representing the type of this object """
+        return self._bridge_conn.remote_get_type(self._bridge_handle)
+
     def _bridge_set_override(self, name, value):
         self._bridge_overrides[name] = value
 
@@ -1023,8 +1051,8 @@ class BridgedObject(object):
             self._bridge_conn.remote_del(self._bridge_handle)
 
     def __str__(self):
-        # TODO broken for javapackage objects (ghidra) and class objects (ghidra.framework.model.ToolListener)
-        return self._bridged_get("__str__")()
+        # need to call str against the type, with the instance as the argument (otherwise it doesn't handle java packages/classes correctly)
+        return self._bridged_get_type()._bridged_get("__str__")(self)
 
     def __repr__(self):
         return "<BridgedObject({}, handle={})>".format(self._bridge_type, self._bridge_handle)
@@ -1057,7 +1085,7 @@ class BridgedCallable(BridgedObject):
             dct = class_init
             assert isinstance(bases[0], BridgedCallable)
             # create the class remotely, and return the BridgedCallable back to it
-            return bases[0]._bridge_conn.remote_type_create(name, bases, dct)
+            return bases[0]._bridge_conn.remote_create_type(name, bases, dct)
 
     def __init__(self, bridge_conn, obj_dict, class_init=None):
         """ As with __new__, __init__ may be called as part of a class creation, not just an instance of BridgedCallable. We just ignore that case """

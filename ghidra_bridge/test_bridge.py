@@ -264,3 +264,13 @@ class TestBridge(unittest.TestCase):
             remote_obj, (remote_float, remote_class)))
         self.assertFalse(bridge.bridged_isinstance(
             remote_obj, (remote_float, remote_int)))
+
+    def test_bridged_get_type(self):
+        """ Make sure we can get an object representing the type of a bridged object """
+        remote_uuid = TestBridge.test_bridge.remote_import("uuid")
+        remote_obj = remote_uuid.uuid4()
+
+        self.assertEquals(str(remote_obj._bridged_get_type()),
+                          "<class 'uuid.UUID'>")
+        self.assertEquals(
+            str(remote_obj._bridged_get_type()._bridged_get_type()), "<type 'type'>")
