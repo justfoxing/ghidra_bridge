@@ -64,6 +64,7 @@ EXCEPTION = "exception"
 OBJ = "obj"
 CALLABLE_OBJ = "callable_obj"
 BASES = "bases"
+REPR="repr"
 
 MESSAGE = "message"
 CMD = "cmd"
@@ -340,7 +341,7 @@ class BridgeHandle(object):
         self.attrs = dir(local_obj)
 
     def to_dict(self):
-        return {HANDLE: self.handle, TYPE: type(self.local_obj).__name__, ATTRS: self.attrs}
+        return {HANDLE: self.handle, TYPE: type(self.local_obj).__name__, ATTRS: self.attrs, REPR: repr(self.local_obj)}
 
     def __str__(self):
         return "BridgeHandle({}: {})".format(self.handle, self.local_obj)
@@ -976,6 +977,7 @@ class BridgedObject(object):
         self._bridge_handle = obj_dict[HANDLE]
         self._bridge_type = obj_dict[TYPE]
         self._bridge_attrs = obj_dict[ATTRS]
+        self._bridge_repr = obj_dict[REPR]
         self._bridge_overrides = dict()
 
     def __getattribute__(self, attr):
@@ -1055,7 +1057,7 @@ class BridgedObject(object):
         return self._bridged_get_type()._bridged_get("__str__")(self)
 
     def __repr__(self):
-        return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridged_get("__repr__")(), self._bridge_type, self._bridge_handle)
+        return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridge_repr, self._bridge_type, self._bridge_handle)
 
     def __dir__(self):
         return dir(super(type(self))) + self._bridge_attrs
