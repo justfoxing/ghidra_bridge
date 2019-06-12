@@ -1106,9 +1106,6 @@ class BridgedCallable(BridgedObject):
         """
         return functools.partial(self, instance)
 
-    def __repr__(self):
-        return "<BridgedCallable({}, handle={})>".format(self._bridge_type, self._bridge_handle)
-
 
 class BridgedIterable(BridgedObject):
     def __iter__(self):
