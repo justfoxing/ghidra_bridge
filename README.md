@@ -67,8 +67,14 @@ Tested
 TODO
 =====================
 * Ghidra plugin for server control (cleaner start/stop, port selection, easy packaging/install)
+* Handle server/client teardown cleanly
 * Exceptions - pull traceback info in the exceptions we handle for pushing back
 * Better transport/serialization (JSON/TCP just feels wrong)
 * Keep stats of remote queries, so users can ID the parts of their scripts causing the most remote traffic for optimisation
 * Examples
+    * Jupyter notebook
 * Better threadpool control (don't keep all threads around forever, allow some to die off)
+
+Contributors
+=====================
+* Thx @fmagin for better iPython support!
