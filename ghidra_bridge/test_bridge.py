@@ -92,11 +92,12 @@ class TestBridge(unittest.TestCase):
         self.assertEqual(test_string, mod.test)
 
     def test_get_non_existent(self):
+        """ Check that requesting a non-existent attribute over the bridge raises an attributeerror """
         mod = TestBridge.test_bridge.remote_import("re")
 
         remote_obj = mod.compile("foo")
 
-        with self.assertRaises(bridge.BridgeException):
+        with self.assertRaises(AttributeError):
             remote_obj.doesnt_exist
 
     def test_get_callable(self):

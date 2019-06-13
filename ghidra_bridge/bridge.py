@@ -1004,7 +1004,16 @@ class BridgedObject(object):
         elif attr in BridgedObject.DONT_BRIDGE or (attr in BridgedObject.DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
             raise AttributeError()
         else:
-            result = self._bridged_get(attr)
+            try:
+                result = self._bridged_get(attr)
+            except BridgeException as be:
+                # unwrap AttributeErrors if they occurred on the other side of the bridge
+                if be.args[1]._bridge_type == "AttributeError":
+                    raise AttributeError(be.args[0])
+                else:
+                    # some other cause - just reraise the exception
+                    raise
+                
         return result
 
     def __setattr__(self, attr, value):
