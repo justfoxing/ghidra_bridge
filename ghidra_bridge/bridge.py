@@ -64,7 +64,7 @@ EXCEPTION = "exception"
 OBJ = "obj"
 CALLABLE_OBJ = "callable_obj"
 BASES = "bases"
-REPR="repr"
+REPR = "repr"
 
 MESSAGE = "message"
 CMD = "cmd"
@@ -971,25 +971,25 @@ class BridgedObject(object):
     _bridge_attrs = None
     # overrides allow you to make changes just in the local bridge object, not against the remote object (e.g., to avoid conflicts with interactive fixups to the remote __main__)
     _bridge_overrides = None
-    
+
     # list of methods which we don't bridge, but need to have specific names (so we can't use the _bridge prefix for them)
     # TODO decorator to mark a function as local, don't bridge it - then have it automatically fill this out (also needs to work for subclasses)
     LOCAL_METHODS = ["__del__", "__str__", "__repr__", "__dir__"]
-    
+
     # list of attrs that we don't want to waste bridge calls on
-    DONT_BRIDGE = [ "__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
-        # associated with ipython 
-        "_ipython_canary_method_should_not_exist_", 
-        "__sizeof__" ]
-        
+    DONT_BRIDGE = ["__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
+                   # associated with ipython
+                   "_ipython_canary_method_should_not_exist_",
+                   "__sizeof__"]
+
     # list of attrs that we don't want to waste bridge calls on, unless they really are defined in the bridged object
     DONT_BRIDGE_UNLESS_IN_ATTRS = [
         # associated with ipython
-        "_repr_mimebundle_", 
-        "__init_subclass__", 
+        "_repr_mimebundle_",
+        "__init_subclass__",
         # javapackage objects (like the ghidra module) don't have a __delattr__
-        "__delattr__" ]
-    
+        "__delattr__"]
+
     def __init__(self, bridge_conn, obj_dict):
         self._bridge_conn = bridge_conn
         self._bridge_handle = obj_dict[HANDLE]
@@ -1013,7 +1013,7 @@ class BridgedObject(object):
                 else:
                     # some other cause - just reraise the exception
                     raise
-                
+
         return result
 
     def __setattr__(self, attr, value):
@@ -1088,7 +1088,7 @@ class BridgedObject(object):
 
     def __dir__(self):
         return dir(super(type(self))) + self._bridge_attrs
-        
+
 
 class BridgedCallable(BridgedObject):
     # TODO can we further make BridgedClass a subclass of BridgedCallable? How can we detect? Allow us to pull this class/type hack further away from normal calls
@@ -1152,7 +1152,6 @@ class BridgedIterator(BridgedObject):
             raise
 
     next = __next__  # handle being run in a py2 environment
-
 
 
 class BridgedIterableIterator(BridgedIterator, BridgedIterable):
