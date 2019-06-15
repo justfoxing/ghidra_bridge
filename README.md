@@ -77,4 +77,4 @@ TODO
 
 Contributors
 =====================
-* Thx @fmagin for better iPython support!
+* Thx @fmagin for better iPython support, and much more useful reprs!
