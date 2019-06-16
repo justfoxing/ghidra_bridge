@@ -1,5 +1,6 @@
 import sys
 import weakref
+import pydoc
 
 from . import bridge
 
@@ -190,7 +191,7 @@ class GhidraBridge():
                         # make a remote help call - either param is bridged, or no param (in which case, we'll get the default help for the GhidraScript API)
                         help_output = remote_main.GhidraBridgeServer.ghidra_help(
                             param)
-                        print(help_output)
+                        pydoc.pager(help_output)
 
                 namespace["help"] = ghidra_help
                 namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK]["help"] = ghidra_help
