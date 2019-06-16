@@ -8,7 +8,7 @@ still be present in the BridgedObject for the __main__ module. This prevents the
 being loaded over the local ghidra_bridge and causing issues. You probably only want this for stuff imported by the ghidra_bridge_server
 script that might conflict on the local side (or which is totally unnecessary on the local side, like GhidraBridgeServer).
 """
-EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess",
+EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess", "sys",
                            "ghidra_bridge", "bridge", "GhidraBridgeServer"]
 
 GHIDRA_BRIDGE_NAMESPACE_TRACK = "__ghidra_bridge_namespace_track__"
@@ -172,6 +172,28 @@ class GhidraBridge():
                 # overload isinstance with bridged_isinstance, so checking bridged objects are of bridged types will just work
                 namespace["isinstance"] = bridge.bridged_isinstance
                 namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK]["isinstance"] = bridge.bridged_isinstance
+
+                # overwrite help with our own function for using ghidra's help
+                def ghidra_help(param=None):
+                    """ Used when in interactive mode - calls through the bridge to call ghidra's help and capture the output, then print it locally """
+                    if param is not None and not bridge._is_bridged_object(param):
+                        # asking for help on something that isn't bridged - just use the original help
+                        # make sure we have the real help, just in case we've overridden it already
+                        builtin_help = None
+                        try:
+                            from builtins import help as builtin_help  # python3
+                        except:
+                            # try falling back to python2 syntax
+                            from __builtin__ import help as builtin_help
+                        builtin_help(param)
+                    else:
+                        # make a remote help call - either param is bridged, or no param (in which case, we'll get the default help for the GhidraScript API)
+                        help_output = remote_main.GhidraBridgeServer.ghidra_help(
+                            param)
+                        print(help_output)
+
+                namespace["help"] = ghidra_help
+                namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK]["help"] = ghidra_help
 
             except Exception:
                 self.unload_flat_api(namespace)
