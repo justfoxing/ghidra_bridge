@@ -35,7 +35,7 @@ Interactive mode
 =====================
 Normally, Ghidra scripts get an instance of the Ghidra state and current\* variables (currentProgram, currentAddress, etc) when first started, and it doesn't update while the script runs. However, if you run the Ghidra Python interpreter, that updates its state with every command, so that currentAddress always matches the GUI.
 
-To reflect this, GhidraBridge will automatically attempt to determine if you're running the client in an interactive environment (e.g., the Python interpreter, iPython) or just from a script. If it's an interactive environment, it'll register an event listener with Ghidra and perform some dubious behind-the-scenes shenanigans to make sure that the state is updated with GUI changes to behave like the Ghidra Python interpreter. 
+To reflect this, GhidraBridge will automatically attempt to determine if you're running the client in an interactive environment (e.g., the Python interpreter, iPython) or just from a script. If it's an interactive environment, it'll register an event listener with Ghidra and perform some dubious behind-the-scenes shenanigans to make sure that the state is updated with GUI changes to behave like the Ghidra Python interpreter.  It'll also replace `help()` with one that reaches out to use Ghidra's help across the bridge if you give it a bridged object.
 
 You shouldn't have to care about this, but if for some reason the auto-detection doesn't give you the result you need, you can specify the boolean interactive_mode argument when creating your client GhidraBridge to force it on or off as required.
 
