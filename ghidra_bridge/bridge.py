@@ -78,6 +78,8 @@ ISINSTANCE = "isinstance"
 CALL = "call"
 IMPORT = "import"
 DEL = "del"
+EVAL= "eval"
+EXPR = "expr"
 RESULT = "result"
 ERROR = "error"
 
@@ -802,6 +804,20 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
+
+    def remote_eval(self, eval_string):
+        command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
+            {EXPR: eval_string})}
+        return self.deserialize_from_dict(self.send_cmd(command_dict))
+
+    def local_eval(self, args_dict):
+        args = self.deserialize_from_dict(args_dict)
+        try:
+            result = eval(args[EXPR])
+            return self.serialize_to_dict(result)
+        except Exception as e:
+            return self.serialize_to_dict(e)
+
     def handle_command(self, message_dict):
 
         response_dict = {VERSION: COMMS_VERSION_2,
@@ -829,6 +845,8 @@ class BridgeConn(object):
             response_dict[RESULT] = self.local_get_all(command_dict[ARGS])
         elif command_dict[CMD] == ISINSTANCE:
             response_dict[RESULT] = self.local_isinstance(command_dict[ARGS])
+        elif command_dict[CMD] == EVAL:
+            response_dict[RESULT] = self.local_eval(command_dict[ARGS])
 
         self.logger.debug("Responding with {}".format(response_dict))
         return json.dumps(response_dict).encode("utf-8")
@@ -907,6 +925,9 @@ class BridgeClient(object):
 
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)
+
+    def remote_eval(self,eval_string):
+        return self.client.remote_eval(eval_string)
 
     # TODO shutdown
 
