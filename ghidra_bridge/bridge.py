@@ -570,7 +570,7 @@ class BridgeConn(object):
 
             return self.sock
 
-    def send_cmd(self, command_dict, get_response=True):
+    def send_cmd(self, command_dict, get_response=True, timeout_override=None):
         """ Package and send a command off. If get_response set, wait for the response and return it. Else return none """
         cmd_id = str(uuid.uuid4())  # used to link commands and responses
         envelope_dict = {VERSION: COMMS_VERSION_2,
@@ -590,7 +590,7 @@ class BridgeConn(object):
             result = {}
             # wait for the response
             response_dict = self.response_mgr.get_response(
-                cmd_id, timeout=self.response_timeout)
+                cmd_id, timeout=timeout_override if timeout_override else self.response_timeout )
 
             if response_dict is not None:
                 if RESULT in response_dict:
@@ -808,7 +808,8 @@ class BridgeConn(object):
     def remote_eval(self, eval_string):
         command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
             {EXPR: eval_string})}
-        return self.deserialize_from_dict(self.send_cmd(command_dict))
+        # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary
+        return self.deserialize_from_dict(self.send_cmd(command_dict, timeout_override=self.response_timeout * 100))
 
     def local_eval(self, args_dict):
         args = self.deserialize_from_dict(args_dict)
