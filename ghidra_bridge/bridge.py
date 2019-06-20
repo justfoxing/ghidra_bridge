@@ -974,16 +974,16 @@ class BridgedObject(object):
 
     # list of methods which we don't bridge, but need to have specific names (so we can't use the _bridge prefix for them)
     # TODO decorator to mark a function as local, don't bridge it - then have it automatically fill this out (also needs to work for subclasses)
-    LOCAL_METHODS = ["__del__", "__str__", "__repr__", "__dir__"]
+    _LOCAL_METHODS = ["__del__", "__str__", "__repr__", "__dir__"]
 
     # list of attrs that we don't want to waste bridge calls on
-    DONT_BRIDGE = ["__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
-                   # associated with ipython
+    _DONT_BRIDGE = ["__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
+                    # associated with ipython
                    "_ipython_canary_method_should_not_exist_",
                    "__sizeof__"]
 
     # list of attrs that we don't want to waste bridge calls on, unless they really are defined in the bridged object
-    DONT_BRIDGE_UNLESS_IN_ATTRS = [
+    _DONT_BRIDGE_UNLESS_IN_ATTRS = [
         # associated with ipython
         "_repr_mimebundle_",
         "__init_subclass__",
@@ -999,9 +999,9 @@ class BridgedObject(object):
         self._bridge_overrides = dict()
 
     def __getattribute__(self, attr):
-        if attr.startswith(BRIDGE_PREFIX) or attr == "__class__" or attr in BridgedObject.LOCAL_METHODS:
+        if attr.startswith(BRIDGE_PREFIX) or attr == "__class__" or attr in BridgedObject._LOCAL_METHODS:
             result = object.__getattribute__(self, attr)
-        elif attr in BridgedObject.DONT_BRIDGE or (attr in BridgedObject.DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
+        elif attr in BridgedObject._DONT_BRIDGE or (attr in BridgedObject._DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
             raise AttributeError()
         else:
             try:
@@ -1087,7 +1087,7 @@ class BridgedObject(object):
         return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridge_repr, self._bridge_type, self._bridge_handle)
 
     def __dir__(self):
-        return dir(super(type(self))) + self._bridge_attrs
+        return dir(super(type(self))) + ( self._bridge_attrs if self._bridge_attrs else [] )
 
 
 class BridgedCallable(BridgedObject):
