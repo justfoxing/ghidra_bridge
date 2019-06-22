@@ -809,13 +809,21 @@ class BridgeConn(object):
         command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
             {EXPR: eval_string})}
         # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary
-        return self.deserialize_from_dict(self.send_cmd(command_dict, timeout_override=self.response_timeout * 100))
+        result = self.send_cmd(command_dict, timeout_override=self.response_timeout * 100)
+        self.logger.debug("remote_eval: Recieved result")
+        result_dict = self.deserialize_from_dict(result)
+        self.logger.debug("remote_eval: Deserialized result")
+        return result_dict
 
     def local_eval(self, args_dict):
         args = self.deserialize_from_dict(args_dict)
         try:
+            self.logger.debug("local_eval({})".format(args[EXPR]))
             result = eval(args[EXPR])
-            return self.serialize_to_dict(result)
+            self.logger.debug("local_eval: Finished evaluating")
+            d = self.serialize_to_dict(result)
+            self.logger.debug("local_eval: Finished serializing")
+            return d
         except Exception as e:
             return self.serialize_to_dict(e)
 
