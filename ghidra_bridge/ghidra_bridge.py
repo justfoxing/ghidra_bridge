@@ -72,8 +72,8 @@ class GhidraBridge():
             remote_main._bridged_get_all()
 
         if self.interactive_mode:
-            # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a PluginTool
-            if remote_main.state.getTool() is None:
+            # if we're in headless mode (indicated by no state attribute for pythonRun or no tool for ghidra headless), we can't actually do interactive mode - we don't have access to a PluginTool
+            if not hasattr(remote_main, 'state') or remote_main.state.getTool() is None:
                 self.interactive_mode = False
                 self.bridge.logger.warning(
                     "Disabling interactive mode - not supported when running against a headless Ghidra")
