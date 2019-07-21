@@ -819,7 +819,8 @@ class BridgeConn(object):
         args = self.deserialize_from_dict(args_dict)
         try:
             self.logger.debug("local_eval({})".format(args[EXPR]))
-            result = eval(args[EXPR])
+            # the import __main__ trick allows accessing all the variables that the bridge imports
+            result = eval(args[EXPR], globals(), importlib.import_module('__main__').__dict__)
             self.logger.debug("local_eval: Finished evaluating")
             d = self.serialize_to_dict(result)
             self.logger.debug("local_eval: Finished serializing")
@@ -936,6 +937,17 @@ class BridgeClient(object):
         return self.client.remote_import(module_name)
 
     def remote_eval(self,eval_string):
+        """
+        Takes an expression as an argument and evaluates it entirely on the server.
+        Example: b.bridge.remote_eval('[ f.name for f in currentProgram.functionManager.getFunctions(True)]')
+        If this expression would be evaluated on the client, it would take 2-3 minutes for a binary with ~8k functions due to ~8k roundtrips to call __next__ and ~8k roundtrips to access the name attribute
+
+        Caveats:
+        - The expression `[ f for f in currentProgram.functionManager.getFunctions(True)]` still takes roughly a 1  minute to finish. Almost the entire time is spent sending the message to the client. This issue requires a deeper change in the RPC implementation to increase throughput or reduce message size
+        - no custom variables exist, only what is already inside the __main__ namespace on the server side
+        :param eval_string:
+        :return:
+        """
         return self.client.remote_eval(eval_string)
 
     # TODO shutdown
