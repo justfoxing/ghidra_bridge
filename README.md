@@ -31,6 +31,36 @@ print(getState().getCurrentAddress().getOffset())
 ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 
+Security warning
+=====================
+Be aware that when running, a Ghidra Bridge server effectively provides code execution as a service. If an attacker is able to talk to the port Ghidra Bridge is running on, they can trivially gain execution with the privileges Ghidra is run with. 
+
+Also be aware that the protocol used for sending and receiving Ghidra Bridge messages is unencrypted and unverified - a person-in-the-middle attack would allow complete control of the commands and responses, again providing trivial code execution on the server (and with a little more work, on the client). 
+
+By default, the Ghidra Bridge server only listens on localhost to slightly reduce the attack surface. Only listen on external network addresses if you're confident you're on a network where it is safe to do so. Additionally, it is still possible for attackers to send messages to localhost (e.g., via malicious javascript in the browser, or by exploiting a different process and attacking Ghidra Bridge to elevate privileges). You can mitigate this risk by running Ghidra Bridge from a Ghidra server with reduced permissions (a non-admin user, or inside a container), by only running it when needed, or by running on non-network connected systems.
+
+Remote eval
+=====================
+Ghidra Bridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for function in currentProgram.getFunctionManager().getFunctions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the bridge.remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
+
+The following example demonstrates getting a list of all the names of all the functions in a binary:
+```
+import ghidra_bridge 
+b = ghidra_bridge.GhidraBridge(namespace=globals())
+name_list = b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]")
+```
+
+If your evaluation is going to take some time, you might need to use the timeout_override argument to increase how long the bridge will wait before deciding things have gone wrong.
+
+If you need to supply an argument for the remote evaluation, you can provide arbitrary keyword arguments to the remote_eval function which will be passed into the evaluation context as local variables. The following argument passes in a function:
+```
+import ghidra_bridge 
+b = ghidra_bridge.GhidraBridge(namespace=globals())
+func = currentProgram.getFunctionManager().getFunctions(True).next()
+mnemonics = b.bridge.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
+```
+As a simplification, note also that the evaluation context has the same globals loaded into the \_\_main\_\_ of the script that started the server - in the case of the Ghidra Bridge server, these include the flat API and values such as the currentProgram.
+
 Interactive mode
 =====================
 Normally, Ghidra scripts get an instance of the Ghidra state and current\* variables (currentProgram, currentAddress, etc) when first started, and it doesn't update while the script runs. However, if you run the Ghidra Python interpreter, that updates its state with every command, so that currentAddress always matches the GUI.
@@ -78,3 +108,4 @@ TODO
 Contributors
 =====================
 * Thx @fmagin for better iPython support, and much more useful reprs!
+* Thanks also to @fmagin for remote_eval, allowing faster remote processing for batch queries!
