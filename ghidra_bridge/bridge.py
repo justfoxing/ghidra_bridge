@@ -807,11 +807,11 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
 
-    def remote_eval(self, eval_string, timeout_override=None):
-        self.logger.debug("remote_eval({})".format(eval_string))
+    def remote_eval(self, eval_string, timeout_override=None, **kwargs):
+        self.logger.debug("remote_eval({}, {})".format(eval_string, kwargs))
     
         command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
-            {EXPR: eval_string})}
+            {EXPR: eval_string, KWARGS: kwargs})}
         # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary unless an override specified by caller
         if timeout_override is None:
             timeout_override = self.response_timeout * 100
@@ -824,9 +824,11 @@ class BridgeConn(object):
         
         result = None
         try:
-            self.logger.debug("local_eval({})".format(args[EXPR]))
-            # the import __main__ trick allows accessing all the variables that the bridge imports
-            result = eval(args[EXPR], globals(), importlib.import_module('__main__').__dict__)
+            self.logger.debug("local_eval({},{})".format(args[EXPR], args[KWARGS]))
+            """ the import __main__ trick allows accessing all the variables that the bridge imports, 
+            so evals will run within the global context of what started the bridge, and the arguments 
+            supplied as kwargs will override that """
+            result = eval(args[EXPR], importlib.import_module('__main__').__dict__, args[KWARGS])
             self.logger.debug("local_eval: Finished evaluating")
         except Exception as e:
             result = e
@@ -942,7 +944,7 @@ class BridgeClient(object):
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)
 
-    def remote_eval(self, eval_string, timeout_override=None):
+    def remote_eval(self, eval_string, timeout_override=None, **kwargs):
         """
         Takes an expression as an argument and evaluates it entirely on the server.
         Example: b.bridge.remote_eval('[ f.name for f in currentProgram.functionManager.getFunctions(True)]')
@@ -950,11 +952,10 @@ class BridgeClient(object):
 
         Caveats:
         - The expression `[ f for f in currentProgram.functionManager.getFunctions(True)]` still takes roughly a 1  minute to finish. Almost the entire time is spent sending the message to the client. This issue requires a deeper change in the RPC implementation to increase throughput or reduce message size
-        - no custom variables exist, only what is already inside the __main__ namespace on the server side
-        :param eval_string:
-        :return:
+        
+        To provide arguments into the eval context, supply them as keyword arguments with names matching the names used in the eval string (e.g., remote_eval("x+1", x=2))
         """
-        return self.client.remote_eval(eval_string, timeout_override=timeout_override)
+        return self.client.remote_eval(eval_string, timeout_override=timeout_override, **kwargs)
 
     # TODO shutdown
 

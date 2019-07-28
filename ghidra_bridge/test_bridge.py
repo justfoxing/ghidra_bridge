@@ -283,3 +283,15 @@ class TestBridge(unittest.TestCase):
         with self.assertRaises(bridge.BridgeException):
             TestBridge.test_bridge.remote_eval("1+x")
             
+    def test_remote_eval_kwargs(self):
+        self.assertEquals(3, TestBridge.test_bridge.remote_eval("x+y", x=1, y=2))
+        
+    def test_remote_eval_timeout(self):
+        remote_time = TestBridge.test_bridge.remote_import("time")
+            
+        # check that it times out if not enough time allocated
+        with self.assertRaises(Exception):
+            TestBridge.test_bridge.remote_eval("sleep(2)", timeout_override=1, sleep=remote_time.sleep)
+            
+        # check that it works with enough time
+        TestBridge.test_bridge.remote_eval("sleep(2)", timeout_override=3, sleep=remote_time.sleep)
