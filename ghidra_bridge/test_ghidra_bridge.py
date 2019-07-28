@@ -109,3 +109,8 @@ class TestGhidraBridge(unittest.TestCase):
         """ Test that we can now call str on javapackage objects """
         with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
             self.assertTrue("java package ghidra" in str(ghidra))
+
+    def test_memory_callable_iterable(self):
+        """ Test that we handle the ghidra.program.model.mem.Memory class - it's callable and iterable """
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
+            self.assertNotEqual(None, ghidra.program.model.mem.Memory)

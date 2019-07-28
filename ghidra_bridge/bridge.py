@@ -540,9 +540,9 @@ class BridgeConn(object):
             return None
         elif serial_dict[TYPE] == OBJ or serial_dict[TYPE] == CALLABLE_OBJ:
             if serial_dict[TYPE] == CALLABLE_OBJ:
-                # note: assumes we're not going to get something that's iterable and callable at the same time (except types ... which aren't actually iterable, they may just have __iter__)
+                # note: assumes we're not going to get something that's iterable and callable at the same time (except types or Jython classes... which aren't actually iterable, they may just have __iter__)
                 assert "__iter__" not in serial_dict[VALUE][
-                    ATTRS] or "type" == serial_dict[VALUE][TYPE], "Found something callable and iterable at the same time"
+                    ATTRS] or serial_dict[VALUE][TYPE] in ["type", "Class"], "Found something callable and iterable at the same time: {}".format(serial_dict[VALUE][TYPE])
                 return BridgedCallable(self, serial_dict[VALUE])
             elif "__iter__" in serial_dict[VALUE][ATTRS] and ("__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]):
                 return BridgedIterableIterator(self, serial_dict[VALUE])
