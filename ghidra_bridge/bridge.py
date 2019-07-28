@@ -571,7 +571,9 @@ class BridgeConn(object):
             return self.sock
 
     def send_cmd(self, command_dict, get_response=True, timeout_override=None):
-        """ Package and send a command off. If get_response set, wait for the response and return it. Else return none """
+        """ Package and send a command off. If get_response set, wait for the response and return it. Else return none.
+            If timeout override set, wait that many seconds, else wait for default response timeout
+        """
         cmd_id = str(uuid.uuid4())  # used to link commands and responses
         envelope_dict = {VERSION: COMMS_VERSION_2,
                          ID: cmd_id,
@@ -805,28 +807,32 @@ class BridgeConn(object):
         return self.serialize_to_dict(result)
 
 
-    def remote_eval(self, eval_string):
+    def remote_eval(self, eval_string, timeout_override=None):
+        self.logger.debug("remote_eval({})".format(eval_string))
+    
         command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
             {EXPR: eval_string})}
-        # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary
-        result = self.send_cmd(command_dict, timeout_override=self.response_timeout * 100)
-        self.logger.debug("remote_eval: Recieved result")
-        result_dict = self.deserialize_from_dict(result)
-        self.logger.debug("remote_eval: Deserialized result")
-        return result_dict
+        # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary unless an override specified by caller
+        if timeout_override is None:
+            timeout_override = self.response_timeout * 100
+        result = self.send_cmd(command_dict, timeout_override=timeout_override)
+
+        return self.deserialize_from_dict(result)
 
     def local_eval(self, args_dict):
         args = self.deserialize_from_dict(args_dict)
+        
+        result = None
         try:
             self.logger.debug("local_eval({})".format(args[EXPR]))
             # the import __main__ trick allows accessing all the variables that the bridge imports
             result = eval(args[EXPR], globals(), importlib.import_module('__main__').__dict__)
             self.logger.debug("local_eval: Finished evaluating")
-            d = self.serialize_to_dict(result)
-            self.logger.debug("local_eval: Finished serializing")
-            return d
         except Exception as e:
-            return self.serialize_to_dict(e)
+            result = e
+            traceback.print_exc()
+
+        return self.serialize_to_dict(result)
 
     def handle_command(self, message_dict):
 
@@ -936,7 +942,7 @@ class BridgeClient(object):
     def remote_import(self, module_name):
         return self.client.remote_import(module_name)
 
-    def remote_eval(self,eval_string):
+    def remote_eval(self, eval_string, timeout_override=None):
         """
         Takes an expression as an argument and evaluates it entirely on the server.
         Example: b.bridge.remote_eval('[ f.name for f in currentProgram.functionManager.getFunctions(True)]')
@@ -948,7 +954,7 @@ class BridgeClient(object):
         :param eval_string:
         :return:
         """
-        return self.client.remote_eval(eval_string)
+        return self.client.remote_eval(eval_string, timeout_override=timeout_override)
 
     # TODO shutdown
 
