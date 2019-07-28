@@ -275,3 +275,11 @@ class TestBridge(unittest.TestCase):
                           "<class 'uuid.UUID'>")
         self.assertEquals(
             str(remote_obj._bridged_get_type()._bridged_get_type()), "<type 'type'>")
+            
+    def test_remote_eval(self):
+        self.assertEquals(3, TestBridge.test_bridge.remote_eval("1+2"))
+        
+    def test_remote_eval_bad_code(self):
+        with self.assertRaises(bridge.BridgeException):
+            TestBridge.test_bridge.remote_eval("1+x")
+            
