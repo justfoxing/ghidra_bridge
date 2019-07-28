@@ -19,7 +19,7 @@ class GhidraBridgeServer(object):
         NOTE: this class needs to be excluded from ghidra_bridge - it doesn't need to be in the globals, if people want it and
         know what they're doing, they can get it from the BridgedObject for the main module
     """
-    
+
     class PrintAccumulator(object):
         """ Class to handle capturing print output so we can send it across the bridge, by hooking sys.stdout.write().
             Not multithreading aware, it'll just capture whatever is printed from the moment it hooks to the moment 
@@ -27,38 +27,38 @@ class GhidraBridgeServer(object):
         """
         output = None
         old_stdout = None
-        
+
         def __init__(self):
             self.output = ""
 
         def write(self, output):
             self.output += output
-            
+
         def get_output(self):
             return self.output
 
         def hook(self):
             self.old_stdout = sys.stdout
             sys.stdout = self
-            
+
         def unhook(self):
             if self.old_stdout is not None:
                 sys.stdout = self.old_stdout
-                
+
         def __enter__(self):
             self.hook()
-            
+
             return self
-        
+
         def __exit__(self, type, value, traceback):
             self.unhook()
-           
+
     @staticmethod
     def ghidra_help(param=None):
         """ call the ghidra help method, capturing the print output with PrintAccumulator, and return it as a string """
         with GhidraBridgeServer.PrintAccumulator() as help_output:
             help(param)
-            
+
             return help_output.get_output()
 
     class InteractiveListener(ghidra.framework.model.ToolListener):

@@ -78,7 +78,7 @@ ISINSTANCE = "isinstance"
 CALL = "call"
 IMPORT = "import"
 DEL = "del"
-EVAL= "eval"
+EVAL = "eval"
 EXPR = "expr"
 RESULT = "result"
 ERROR = "error"
@@ -592,7 +592,7 @@ class BridgeConn(object):
             result = {}
             # wait for the response
             response_dict = self.response_mgr.get_response(
-                cmd_id, timeout=timeout_override if timeout_override else self.response_timeout )
+                cmd_id, timeout=timeout_override if timeout_override else self.response_timeout)
 
             if response_dict is not None:
                 if RESULT in response_dict:
@@ -806,10 +806,9 @@ class BridgeConn(object):
 
         return self.serialize_to_dict(result)
 
-
     def remote_eval(self, eval_string, timeout_override=None, **kwargs):
         self.logger.debug("remote_eval({}, {})".format(eval_string, kwargs))
-    
+
         command_dict = {CMD: EVAL, ARGS: self.serialize_to_dict(
             {EXPR: eval_string, KWARGS: kwargs})}
         # Remote eval commands might take a while, so override the timeout value, factor 100 is arbitrary unless an override specified by caller
@@ -821,7 +820,7 @@ class BridgeConn(object):
 
     def local_eval(self, args_dict):
         args = self.deserialize_from_dict(args_dict)
-        
+
         result = None
         try:
             self.logger.debug("local_eval({},{})".format(args[EXPR], args[KWARGS]))
@@ -952,7 +951,7 @@ class BridgeClient(object):
 
         Caveats:
         - The expression `[ f for f in currentProgram.functionManager.getFunctions(True)]` still takes roughly a 1  minute to finish. Almost the entire time is spent sending the message to the client. This issue requires a deeper change in the RPC implementation to increase throughput or reduce message size
-        
+
         To provide arguments into the eval context, supply them as keyword arguments with names matching the names used in the eval string (e.g., remote_eval("x+1", x=2))
         """
         return self.client.remote_eval(eval_string, timeout_override=timeout_override, **kwargs)
@@ -1028,8 +1027,8 @@ class BridgedObject(object):
     # list of attrs that we don't want to waste bridge calls on
     _DONT_BRIDGE = ["__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
                     # associated with ipython
-                   "_ipython_canary_method_should_not_exist_",
-                   "__sizeof__"]
+                    "_ipython_canary_method_should_not_exist_",
+                    "__sizeof__"]
 
     # list of attrs that we don't want to waste bridge calls on, unless they really are defined in the bridged object
     _DONT_BRIDGE_UNLESS_IN_ATTRS = [
@@ -1136,7 +1135,7 @@ class BridgedObject(object):
         return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridge_repr, self._bridge_type, self._bridge_handle)
 
     def __dir__(self):
-        return dir(super(type(self))) + ( self._bridge_attrs if self._bridge_attrs else [] )
+        return dir(super(type(self))) + (self._bridge_attrs if self._bridge_attrs else [])
 
 
 class BridgedCallable(BridgedObject):
