@@ -9,21 +9,44 @@ The aim is to be as transparent as possible, so once you're set up, you shouldn'
 How to use for Ghidra
 ======================
 
+## Start Server
+### CodeBrowser Context
+
+For a better interactive shell like IPython or if you need Python 3 libraries in your interactive environment you can start the bridge in the context of an interactive GUI session.
+
 1. Add the path to the ghidra_bridge directory as a script directory in the Ghidra Script Manager (the "3 line" button left of the big red "plus" at the top of the Script Manager)
 2. Run ghidra_bridge_server.py from the Ghidra Script Manager
-3. Install ghidra_bridge in the client python environment (packaged at https://pypi.org/project/ghidra-bridge/):
+
+### Headless Analysis Context
+
+You can run Ghidra Bridge as a post analysis script for a headless analysis and then run some further analysis from the client.
+```
+$ghidraRoot/support/analyzeHeadless ghidra-project -import /bin/ls  -scriptPath ghidra_bridge/ -postscript ghidra_bridge/ghidra_bridge_server.py
+```
+### pythonRun Context
+
+You can start the bridge in an environment without any program loaded, for example if you want to access some API like the DataTypeManager that doesn't require a program being analyzed
+
+```
+$ghidraRoot/support/pythonRun ghidra_bridge/ghidra_bridge_server.py
+```
+
+## Setup Client
+
+1. Install ghidra_bridge in the client python environment (packaged at https://pypi.org/project/ghidra-bridge/):
 ```
 pip install ghidra_bridge
 ```
-4. From the client python:
-```
+
+2. From the client python:
+```python
 import ghidra_bridge
 with ghidra_bridge.GhidraBridge(namespace=globals()):
     print(getState().getCurrentAddress().getOffset())
     ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
 ```
 or
-```
+```python
 import ghidra_bridge
 b = ghidra_bridge.GhidraBridge(namespace=globals()) # creates the bridge and loads the flat API into the global namespace
 print(getState().getCurrentAddress().getOffset())
@@ -44,7 +67,7 @@ Remote eval
 Ghidra Bridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for function in currentProgram.getFunctionManager().getFunctions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the bridge.remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
 
 The following example demonstrates getting a list of all the names of all the functions in a binary:
-```
+```python
 import ghidra_bridge 
 b = ghidra_bridge.GhidraBridge(namespace=globals())
 name_list = b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]")
@@ -53,7 +76,7 @@ name_list = b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunct
 If your evaluation is going to take some time, you might need to use the timeout_override argument to increase how long the bridge will wait before deciding things have gone wrong.
 
 If you need to supply an argument for the remote evaluation, you can provide arbitrary keyword arguments to the remote_eval function which will be passed into the evaluation context as local variables. The following argument passes in a function:
-```
+```python
 import ghidra_bridge 
 b = ghidra_bridge.GhidraBridge(namespace=globals())
 func = currentProgram.getFunctionManager().getFunctions(True).next()
