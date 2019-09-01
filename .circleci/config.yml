@@ -51,10 +51,11 @@ jobs:
       - run:
           name: Spawn ghidra bridge server and run tests
           command: |
-            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
+            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge/ghidra_scripts -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
             ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
-            cd /tmp/ghidra_bridge
+            cd /tmp/ghidra_bridge/
             mkdir test-reports
+            cd /tmp/ghidra_bridge/python/
             nosetests --with-xunit --xunit-file=/tmp/ghidra_bridge/test-reports/nosetests.xml
             python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge
             
@@ -77,15 +78,16 @@ jobs:
           name: Build ghidra_bridge package
           command: |
             pip3 install --user --upgrade setuptools # make sure we've got the latest version, to support using Markdown
+            cd python/
             python3 setup.py sdist bdist_wheel --universal
 
       - store_artifacts:
-          path: dist
+          path: python/dist
           
       - persist_to_workspace:
           root: .
           paths:
-            - dist/
+            - python/dist/
   
   release-pypi:
     docker:
@@ -100,7 +102,7 @@ jobs:
       - run:
           name: upload to pypi
           command: |
-            python3 -m twine upload ./workspace/dist/*
+            python3 -m twine upload ./workspace/python/dist/*
             
   release-github:
     docker:
@@ -113,5 +115,5 @@ jobs:
           name: upload to github
           command: |
             VERSION=$(git describe)
-            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./workspace/dist/            
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./workspace/python/dist/            
         
