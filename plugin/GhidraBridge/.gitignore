@@ -1,0 +1,12 @@
+# build directories
+/bin/
+.gradle/
+dist/
+build/
+
+# eclipse junk
+.project
+.pydevproject
+.classpath
+.antProperties.xml
+.settings/
