@@ -109,6 +109,7 @@ class GhidraBridgeServer(object):
                 self.stop_listening()
                 self.callback_fn._bridge_conn.logger.error(
                     "InteractiveListener failed trying to callback client: " + str(e))
+            
 
     @staticmethod
     def run_server(server_host=bridge.DEFAULT_HOST, server_port=bridge.DEFAULT_SERVER_PORT, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
@@ -116,8 +117,41 @@ class GhidraBridgeServer(object):
             server_host - what address the server should listen on
             server_port - what port the server should listen on
         """
-        bridge.BridgeServer(server_host=server_host,
-                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout).run()
+        server = None
+        print("hi!")
+        
+        # try to get the GhidraBridge plugin to work out configuration and register a shutdown callback
+        try:
+            import ghidrabridge
+            import ghidrabridge.GhidraBridgePlugin
+            
+            # yay, the plugin's here! get the config info we need - Note: we discard the arguments we were called with, in this case
+            server_host = ghidrabridge.GhidraBridgePlugin.getServerHost()
+            server_port = ghidrabridge.GhidraBridgePlugin.getServerPort()
+            response_timeout = ghidrabridge.GhidraBridgePlugin.getResponseTimeout()
+            
+            server = bridge.BridgeServer(server_host=server_host,
+                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout)
+            
+            # now register a shutdown callback with the plugin
+            class ShutdownCallback(ghidrabridge.IShutdownCallback):
+                """ Class to handle getting a callback from java-land to shutdown the server """
+                def __init__(self, server):
+                    self.server = server
+                    
+                def shutdown(self):
+                    self.server.shutdown()
+                    
+            print("regging in python")
+            ghidrabridge.GhidraBridgePlugin.registerShutdownCallback(ShutdownCallback(server))
+            
+        except ImportError:
+            # plugin not present - just create with the args provided
+            server = bridge.BridgeServer(server_host=server_host,
+                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout)
+        
+        # setup's done, kick it into gear.
+        server.run()
 
     @staticmethod
     def run_script_across_ghidra_bridge(script_file, python="python", argstring=""):

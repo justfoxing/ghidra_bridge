@@ -40,7 +40,7 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_SERVER_PORT = 4768  # "Gh"
+DEFAULT_SERVER_PORT = 0x4768  # "Gh"
 
 VERSION = "v"
 MAX_VERSION = "max_v"
@@ -167,6 +167,7 @@ class BridgeCommandHandlerThread(threading.Thread):
 
     def __init__(self, threadpool):
         super(BridgeCommandHandlerThread, self).__init__()
+        print("started bcht")
 
         self.bridge_conn = threadpool.bridge_conn
         # make sure this thread doesn't keep the threadpool alive
@@ -196,8 +197,11 @@ class BridgeCommandHandlerThread(threading.Thread):
                     break
 
                 cmd = self.threadpool.get_command()  # block, waiting for next command
+                
+            print("stopped bcht normally")
         except ReferenceError:
             # expected, means the connection has been closed and the threadpool cleaned up
+            print("stopped bcht exceptionally")
             pass
 
 
@@ -258,11 +262,13 @@ class BridgeCommandHandlerThreadPool(object):
             # make sure the thread "acquires" the semaphore (decrements the ready_threads count)
             self.ready_threads.acquire(blocking=False)
 
+        print("shutting down threadpool")
         # if we make it here, we're shutting down. return none and the thread will pack it in
         return None
 
     def __del__(self):
         """ We're done with this threadpool, tell the threads to start packing it in """
+        print("deleteing threadpool")
         self.shutdown_flag = True
 
 
@@ -277,6 +283,7 @@ class BridgeReceiverThread(threading.Thread):
         super(BridgeReceiverThread, self).__init__()
 
         self.bridge_conn = bridge_conn
+        print("starting BridgeReceiverThread")
 
         # don't let the recv loop keep us alive
         self.daemon = True
@@ -884,6 +891,7 @@ class BridgeServer(threading.Thread):
         """
         super(BridgeServer, self).__init__()
 
+        print("starting server")
         # init the server
         self.server = ThreadingTCPServer(
             (server_host, server_port), BridgeCommandHandler)
@@ -918,7 +926,7 @@ class BridgeServer(threading.Thread):
         self.logger.info("Shutting down bridge")
         if self.is_serving:
             self.is_serving = False
-            self.server.server_close()
+            self.server.shutdown()
 
 
 class BridgeClient(object):

@@ -72,14 +72,14 @@ class GhidraBridge():
             remote_main._bridged_get_all()
 
         if self.interactive_mode:
+            tool = remote_main.state.getTool()  # note: tool shouldn't change
             # if we're in headless mode (indicated by no tool), we can't actually do interactive mode - we don't have access to a PluginTool
-            if remote_main.state.getTool() is None:
+            if tool is None:
                 self.interactive_mode = False
                 self.bridge.logger.warning(
                     "Disabling interactive mode - not supported when running against a headless Ghidra")
             else:
                 # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
-                tool = remote_main.state.getTool()  # note: tool shouldn't change
                 listing_panel = get_listing_panel(tool, remote_main.ghidra)
                 locn = listing_panel.getProgramLocation()
                 # set the values as overrides in the bridged object - this prevents them from being changed in the remote object
