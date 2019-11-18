@@ -33,10 +33,7 @@ try:
 except NameError:  # py3 has no unicode
     STRING_TYPES = (str,)
 
-try:
-    import java.lang.Throwable
-except ImportError:
-    pass
+
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -439,6 +436,12 @@ class BridgeConn(object):
         self.response_mgr = BridgeResponseManager()
         self.response_timeout = response_timeout
 
+        try:
+            import java
+            self.java = java
+        except ImportError:
+            self.java = self.remote_import("java")
+
     def __del__(self):
         """ On teardown, make sure we close our socket to the remote bridge """
         with self.comms_lock:
@@ -493,7 +496,7 @@ class BridgeConn(object):
         elif isinstance(data, dict):
             serialized_dict = {TYPE: DICT, VALUE: [{KEY: self.serialize_to_dict(
                 k), VALUE: self.serialize_to_dict(v)} for k, v in data.items()]}
-        elif isinstance(data, Exception) or isinstance(data, java.lang.Throwable):
+        elif isinstance(data, Exception) or isinstance(data, self.java.lang.Throwable):
             # treat the exception object as an object
             value = self.create_handle(data).to_dict()
             # then wrap the exception specifics around it
@@ -677,7 +680,7 @@ class BridgeConn(object):
             # don't display StopIteration exceptions, they're totally normal
             if not isinstance(e, StopIteration):
                 traceback.print_exc()
-        except java.lang.Throwable as t:
+        except self.java.lang.Throwable as t:
             self.logger.warning("Got java.long.Throwable: %s" % (t))
             result = t
 
