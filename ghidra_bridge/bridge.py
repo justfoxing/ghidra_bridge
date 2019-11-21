@@ -1065,10 +1065,8 @@ class BridgedObject(object):
         self._bridge_overrides = dict()
 
     def __getattribute__(self, attr):
-        if attr.startswith(BRIDGE_PREFIX) or attr == "__class__" or attr in BridgedObject._LOCAL_METHODS:
+        if attr.startswith(BRIDGE_PREFIX) or attr == "__class__" or attr in BridgedObject._DONT_BRIDGE or attr in BridgedObject._LOCAL_METHODS or (attr in BridgedObject._DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
             result = object.__getattribute__(self, attr)
-        elif attr in BridgedObject._DONT_BRIDGE or (attr in BridgedObject._DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
-            raise AttributeError()
         else:
             try:
                 result = self._bridged_get(attr)
