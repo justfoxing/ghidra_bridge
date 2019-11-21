@@ -1036,7 +1036,7 @@ class BridgedObject(object):
 
     # list of methods which we don't bridge, but need to have specific names (so we can't use the _bridge prefix for them)
     # TODO decorator to mark a function as local, don't bridge it - then have it automatically fill this out (also needs to work for subclasses)
-    _LOCAL_METHODS = ["__del__", "__str__", "__repr__", "__dir__", "__doc__", "__signature__", "__annotations__", "__objclass__", "__wrapped__", "getdoc"]
+    _LOCAL_METHODS = ["__del__", "__str__", "__repr__", "__dir__", "getdoc"]
 
     # list of attrs that we don't want to waste bridge calls on
     _DONT_BRIDGE = ["__mro_entries__",  # ignore mro entries - only being called if we're creating a class based off a bridged object
@@ -1050,7 +1050,11 @@ class BridgedObject(object):
         "_repr_mimebundle_",
         "__init_subclass__",
         # javapackage objects (like the ghidra module) don't have a __delattr__
-        "__delattr__"]
+        "__delattr__",
+        "__signature__",
+        "__annotations__",
+        "__objclass__",
+         "__wrapped__"]
 
     def __init__(self, bridge_conn, obj_dict):
         self._bridge_conn = bridge_conn
