@@ -1051,6 +1051,7 @@ class BridgedObject(object):
         "__init_subclass__",
         # javapackage objects (like the ghidra module) don't have a __delattr__
         "__delattr__",
+        # for fmagin's ipyghidra
         "__signature__",
         "__annotations__",
         "__objclass__",
@@ -1066,6 +1067,8 @@ class BridgedObject(object):
 
     def __getattribute__(self, attr):
         if attr.startswith(BRIDGE_PREFIX) or attr == "__class__" or attr in BridgedObject._DONT_BRIDGE or attr in BridgedObject._LOCAL_METHODS or (attr in BridgedObject._DONT_BRIDGE_UNLESS_IN_ATTRS and attr not in self._bridge_attrs):
+            # we don't want to bridge this for one reason or another (including it may not exist on the other end), 
+            # so get the local version, or accept the AttributeError that we'll get if it's not present locally.
             result = object.__getattribute__(self, attr)
         else:
             try:
