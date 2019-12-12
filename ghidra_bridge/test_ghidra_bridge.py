@@ -114,3 +114,9 @@ class TestGhidraBridge(unittest.TestCase):
         """ Test that we handle the ghidra.program.model.mem.Memory class - it's callable and iterable """
         with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
             self.assertNotEqual(None, ghidra.program.model.mem.Memory)
+            
+    def test_address_comparison(self):
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=bridge.DEFAULT_SERVER_PORT):
+            test_address = currentAddress.add(1)
+            self.assertFalse(test_address < currentAddress)
+            self.assertTrue(test_address > currentAddress)

@@ -18,7 +18,7 @@ import struct
 import time
 import weakref
 import functools
-
+import operator
 
 # from six.py's strategy
 INTEGER_TYPES = None
@@ -1024,6 +1024,56 @@ def bridged_isinstance(test_object, class_or_tuple):
 
     return result
 
+# At the moment, BridgedObjects have trouble with class methods (e.g., where the method of accessing is not instance.doThing(),  but more like # type(instance).doThing(instance) - such as </__lt__, len(), str().
+# To handle this, we define a list of class methods that we want to expose, and add a BridgedClassMethod handler for each of them to BridgedObject.
+# This is kind of gross, because it means all the class methods are exposed even for bridged objects that don't have them
+# TODO: possibly a better fix is to dynamically create BridgedObject subclasses on the fly for each different type of bridged object, with only the 
+# appropriate class methods defined.
+BRIDGED_CLASS_METHODS = [ "__str__", "__len__" ]
+# extract methods from operator, so I don't have to type out all the different options
+for operator_name in dir(operator):
+    # only do the methods that start and end with __, and exclude __new__
+    if operator_name.startswith("__") and operator_name.endswith("__") and operator_name != "__new__" and "builtin_function_or_method" in str(type(getattr(operator, operator_name))):
+        BRIDGED_CLASS_METHODS.append(operator_name)
+        
+# We define a class for the BridgedClassMethod so we can use descriptor get to resolve which method should be used for a given instance
+class BridgedClassMethod(object):
+    method_name = None
+    def __init__(self, method_name):
+        self.method_name = method_name
+
+    def __get__(self, instance, owner):
+        """ Use descriptor get so that we bind the BridgedClassMethod to correctly to the remote method and the instance when it's grabbed.
+            Use functools.partial to return a wrapper to the remote method with the instance object as the first arg
+        """
+        remote_type = instance._bridged_get_type()
+        
+        remote_method = None
+        
+        # so, jython getattr() will query first the object, then its parent class for a java type, this 
+        # will end up querying the jython type, then java.lang.Class
+        # java.lang.Class does have the rich comparables (__lt__/__gt__/etc) defined, but they appear to 
+        # expect to be called differently (will return an error saying they expected 2 args, got 2 args)
+        # so what we'll do instead is check if the class methods we're looking for appear in the attributes
+        # of the type before we try to get them - if not, raise an exception.
+        # This does lead to a difference in behaviour for ghidra_bridge: currentProgram < currentProgram is a
+        # TypeError/not supported on the bridge end, and False in the ghidra python interpreter. However,
+        # since the java.lang.Class level implementation doesn't seem particularly useful, I don't think
+        # that loses too much.
+        # TODO is there a cleaner way to handle this? Can we push this logic into _bridged_get, or will
+        # it break things there?
+        if self.method_name in remote_type._bridge_attrs:
+            remote_method = remote_type._bridged_get(self.method_name)    
+        elif (self.method_name == "__truediv__") and ("__div__" in remote_type._bridge_attrs):
+            # handle a python2/3 compatibility issue - 3 uses truediv for /, 2 uses div unless you've imported 
+            # __future__.division. Allow falling back to __div__ if __truediv__ requested but not present
+            # TODO pull that out into its own handling class?
+            remote_method = remote_type._bridged_get("__div__")
+            
+        if remote_method is None:
+            raise AttributeError()
+            
+        return functools.partial(remote_method, instance)
 
 class BridgedObject(object):
     """ An object you can only interact with on the opposite side of a bridge """
@@ -1143,16 +1193,15 @@ class BridgedObject(object):
         if self._bridge_conn is not None:  # only need to del if this was properly init'd
             self._bridge_conn.remote_del(self._bridge_handle)
 
-    def __str__(self):
-        # need to call str against the type, with the instance as the argument (otherwise it doesn't handle java packages/classes correctly)
-        return self._bridged_get_type()._bridged_get("__str__")(self)
-
     def __repr__(self):
         return "<{}('{}', type={}, handle={})>".format(type(self).__name__, self._bridge_repr, self._bridge_type, self._bridge_handle)
 
     def __dir__(self):
         return dir(super(type(self))) + (self._bridge_attrs if self._bridge_attrs else [])
 
+# after BridgedObject is defined, update it to include handlers for common class methods 
+for method_name in BRIDGED_CLASS_METHODS:
+    setattr(BridgedObject, method_name, BridgedClassMethod(method_name))
 
 class BridgedCallable(BridgedObject):
     # TODO can we further make BridgedClass a subclass of BridgedCallable? How can we detect? Allow us to pull this class/type hack further away from normal calls
@@ -1197,7 +1246,7 @@ class BridgedCallable(BridgedObject):
         """
         return functools.partial(self, instance)
 
-
+# TODO remove this
 class BridgedIterable(BridgedObject):
     def __iter__(self):
         return self._bridged_get("__iter__")()

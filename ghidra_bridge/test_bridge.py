@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals  # string literals are all unicode
+from __future__ import division # if python 2, force truediv division (default in 3)
 
 import base64
 import logging
@@ -295,3 +296,31 @@ class TestBridge(unittest.TestCase):
 
         # check that it works with enough time
         TestBridge.test_bridge.remote_eval("sleep(2)", timeout_override=3, sleep=remote_time.sleep)
+
+    def test_operators(self):
+        # check we can handle operator comparisons, addition, etc
+        remote_datetime = TestBridge.test_bridge.remote_import("datetime")
+        td1 = remote_datetime.timedelta(1)
+        td2 = remote_datetime.timedelta(2)
+
+        self.assertTrue(td1 < td2)
+        self.assertTrue(td2 >= td1)
+        self.assertEquals(remote_datetime.timedelta(3), td1 + td2)
+        self.assertEquals(td1, td2//2) # we use floordiv here, truediv tested below
+        
+    def test_truediv(self):
+        # check we cleanly fallback from truediv to div
+        # timedelta in jython2.7 implements __div__ but not __truediv__
+        remote_datetime = TestBridge.test_bridge.remote_import("datetime")
+        td1 = remote_datetime.timedelta(1)
+        td2 = remote_datetime.timedelta(2)
+        self.assertEquals(td1, td2/2) 
+        
+    def test_len(self):
+        # check we can handle len
+        remote_collections = TestBridge.test_bridge.remote_import("collections")
+        dq = remote_collections.deque()
+        dq.append(1)
+        dq.append(2)
+        dq.append(3)
+        self.assertEquals(3, len(dq))
