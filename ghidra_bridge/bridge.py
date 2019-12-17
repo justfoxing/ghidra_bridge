@@ -68,6 +68,7 @@ BOOL = "bool"
 STR = "str"
 BYTES = "bytes"
 NONE = "none"
+NOTIMPLEMENTED = "notimp"
 BRIDGED = "bridged"
 EXCEPTION = "exception"
 OBJ = "obj"
@@ -509,6 +510,8 @@ class BridgeConn(object):
             serialized_dict = {TYPE: BRIDGED, VALUE: data._bridge_handle}
         elif isinstance(data, type(None)):
             serialized_dict = {TYPE: NONE}
+        elif isinstance(data, type(NotImplemented)):
+            serialized_dict = {TYPE: NOTIMPLEMENTED}
         else:
             # it's an object. assign a reference
             obj_type = CALLABLE_OBJ if callable(data) else OBJ
@@ -547,6 +550,8 @@ class BridgeConn(object):
             return self.get_object_by_handle(serial_dict[VALUE])
         elif serial_dict[TYPE] == NONE:
             return None
+        elif serial_dict[TYPE] == NOTIMPLEMENTED:
+            return NotImplemented            
         elif serial_dict[TYPE] == OBJ or serial_dict[TYPE] == CALLABLE_OBJ:
             if serial_dict[TYPE] == CALLABLE_OBJ:
                 # note: assumes we're not going to get something that's iterable and callable at the same time (except types or Jython classes... which aren't actually iterable, they may just have __iter__)
