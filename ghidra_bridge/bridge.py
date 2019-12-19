@@ -107,6 +107,17 @@ MAX_SUPPORTED_COMMS_VERSION = COMMS_VERSION_2
 
 DEFAULT_RESPONSE_TIMEOUT = 2  # seconds
 
+# BridgedObjects have a little trouble with class methods (e.g., where the method of accessing is not instance.doThing(),  but more like 
+# type(instance).doThing(instance) - such as __lt__, len(), str().
+# To handle this, we define a list of class methods that we want to expose - this is a little gross, I'd like to dynamically do this based on the methods in the
+# bridged object's type, but need to come up with a blacklist of things like __class__, __new__, etc which will interfere with the local objects first
+BRIDGED_CLASS_METHODS = [ "__str__", "__len__", "__iter__" ]
+# extract methods from operator, so I don't have to type out all the different options
+for operator_name in dir(operator):
+    # only do the methods that start and end with __, and exclude __new__
+    if operator_name.startswith("__") and operator_name.endswith("__") and operator_name != "__new__" and "builtin_function_or_method" in str(type(getattr(operator, operator_name))):
+        BRIDGED_CLASS_METHODS.append(operator_name)
+
 
 class BridgeException(Exception):
     pass
@@ -353,7 +364,15 @@ class BridgeHandle(object):
         self.attrs = dir(local_obj)
 
     def to_dict(self):
-        return {HANDLE: self.handle, TYPE: type(self.local_obj).__name__, ATTRS: self.attrs, REPR: repr(self.local_obj)}
+        # extract the type name from the repr for the type
+        type_repr = repr(type(self.local_obj))
+        # expect it to be something like <class 'foo.bar'> or <type 'foo.bar'>
+        if "'" in type_repr:
+            type_name = type_repr.split("'")[1]
+        else:
+            # just use the repr straight up 
+            type_name = type_repr
+        return {HANDLE: self.handle, TYPE: type_name, ATTRS: self.attrs, REPR: repr(self.local_obj)}
 
     def __str__(self):
         return "BridgeHandle({}: {})".format(self.handle, self.local_obj)
@@ -443,6 +462,10 @@ class BridgeConn(object):
 
         self.response_mgr = BridgeResponseManager()
         self.response_timeout = response_timeout
+        
+        # keep a cache of types of objects we've created
+        # make it a weakvaluedict so we don't hold onto the types (and the bridgedcallables in them) longer than we have objects for them
+        self.cached_bridge_types = weakref.WeakValueDictionary()
 
     def __del__(self):
         """ On teardown, make sure we close our socket to the remote bridge """
@@ -544,8 +567,7 @@ class BridgeConn(object):
 
             return result
         elif serial_dict[TYPE] == EXCEPTION:
-            raise BridgeException(self.deserialize_from_dict(serial_dict[MESSAGE]), BridgedObject(
-                self, serial_dict[VALUE]))
+            raise BridgeException(self.deserialize_from_dict(serial_dict[MESSAGE]), self.build_bridged_object(serial_dict[VALUE]))
         elif serial_dict[TYPE] == BRIDGED:
             return self.get_object_by_handle(serial_dict[VALUE])
         elif serial_dict[TYPE] == NONE:
@@ -553,21 +575,8 @@ class BridgeConn(object):
         elif serial_dict[TYPE] == NOTIMPLEMENTED:
             return NotImplemented            
         elif serial_dict[TYPE] == OBJ or serial_dict[TYPE] == CALLABLE_OBJ:
-            if serial_dict[TYPE] == CALLABLE_OBJ:
-                # note: assumes we're not going to get something that's iterable and callable at the same time (except types or Jython classes... which aren't actually iterable, they may just have __iter__)
-                assert "__iter__" not in serial_dict[VALUE][
-                    ATTRS] or serial_dict[VALUE][TYPE] in ["type", "Class"], "Found something callable and iterable at the same time: {}".format(serial_dict[VALUE][TYPE])
-                return BridgedCallable(self, serial_dict[VALUE])
-            elif "__iter__" in serial_dict[VALUE][ATTRS] and ("__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]):
-                return BridgedIterableIterator(self, serial_dict[VALUE])
-            elif "__iter__" in serial_dict[VALUE][ATTRS]:
-                return BridgedIterable(self, serial_dict[VALUE])
-            elif "__next__" in serial_dict[VALUE][ATTRS] or "next" in serial_dict[VALUE][ATTRS]:
-                return BridgedIterator(self, serial_dict[VALUE])
-            else:
-                # just an object
-                return BridgedObject(self, serial_dict[VALUE])
-
+            return self.build_bridged_object(serial_dict[VALUE], callable=(serial_dict[TYPE] == CALLABLE_OBJ))
+           
         raise Exception("Unhandled data {}".format(serial_dict))
 
     def get_socket(self):
@@ -886,6 +895,56 @@ class BridgeConn(object):
 
         self.logger.debug("Responding with {}".format(response_dict))
         return json.dumps(response_dict).encode("utf-8")
+        
+    def get_bridge_type(self, bridged_obj_dict, callable=False):
+        # Get a dynamic bridging type from the cache based on the type name, or create it based on the type recovered from the instance bridge handle
+        bridge_handle = bridged_obj_dict[HANDLE]
+        type_name = bridged_obj_dict[TYPE]
+        
+        # short circuit - any function-like thing, as well as any type (or java.lang.Class) becomes a BridgedCallable (need to invoke types/classes, so they're callable)
+        if type_name in ["type", "java.lang.Class", "function", "builtin_function_or_method", "instancemethod", "method_descriptor", "wrapper_descriptor"]:
+            return BridgedCallable
+        elif type_name == "module": 
+            return BridgedObject
+        
+        # if we've already handled this type, use the old one
+        if type_name in self.cached_bridge_types:
+            return self.cached_bridge_types[type_name]
+
+        self.logger.debug("Creating type " + type_name)
+        # need to create a type
+        # grab the remote type for the instance. 
+        remote_type = self.remote_get_type(bridge_handle)
+
+        # create the class dict by getting any of the methods we're interested in
+        class_dict = {}
+        for method_name in BRIDGED_CLASS_METHODS:
+            if method_name in remote_type._bridge_attrs:
+                class_dict[method_name] = remote_type._bridged_get(method_name) 
+        
+        # handle a python2/3 compatibility issue - 3 uses truediv for /, 2 uses div unless you've imported 
+        # __future__.division. Allow falling back to __div__ if __truediv__ requested but not present
+        if "__div__" in remote_type._bridge_attrs and "__truediv__" not in remote_type._bridge_attrs:
+            class_dict["__truediv__"] = remote_type._bridged_get("__div__")
+        
+        # create the bases - any class level method which requires special implementation needs to add the relevant type
+        bases = (BridgedObject,)
+        
+        if callable:
+            bases = (BridgedCallable, )
+        elif "__next__" in remote_type._bridge_attrs or "next" in remote_type._bridge_attrs:
+            bases = (BridgedIterator, )
+        
+        local_type = type("_bridged_" + type_name, bases, class_dict)
+        self.cached_bridge_types[type_name] = local_type 
+        
+        return local_type
+
+    def build_bridged_object(self, obj_dict, callable=False):
+        # construct a bridgedobject, including getting/creating a local dynamic type for its type    
+        bridge_type = self.get_bridge_type(obj_dict, callable=callable)
+        
+        return bridge_type(self, obj_dict)
 
 
 class BridgeServer(threading.Thread):
@@ -1029,57 +1088,6 @@ def bridged_isinstance(test_object, class_or_tuple):
 
     return result
 
-# At the moment, BridgedObjects have trouble with class methods (e.g., where the method of accessing is not instance.doThing(),  but more like # type(instance).doThing(instance) - such as </__lt__, len(), str().
-# To handle this, we define a list of class methods that we want to expose, and add a BridgedClassMethod handler for each of them to BridgedObject.
-# This is kind of gross, because it means all the class methods are exposed even for bridged objects that don't have them
-# TODO: possibly a better fix is to dynamically create BridgedObject subclasses on the fly for each different type of bridged object, with only the 
-# appropriate class methods defined.
-BRIDGED_CLASS_METHODS = [ "__str__", "__len__" ]
-# extract methods from operator, so I don't have to type out all the different options
-for operator_name in dir(operator):
-    # only do the methods that start and end with __, and exclude __new__
-    if operator_name.startswith("__") and operator_name.endswith("__") and operator_name != "__new__" and "builtin_function_or_method" in str(type(getattr(operator, operator_name))):
-        BRIDGED_CLASS_METHODS.append(operator_name)
-        
-# We define a class for the BridgedClassMethod so we can use descriptor get to resolve which method should be used for a given instance
-class BridgedClassMethod(object):
-    method_name = None
-    def __init__(self, method_name):
-        self.method_name = method_name
-
-    def __get__(self, instance, owner):
-        """ Use descriptor get so that we bind the BridgedClassMethod to correctly to the remote method and the instance when it's grabbed.
-            Use functools.partial to return a wrapper to the remote method with the instance object as the first arg
-        """
-        remote_type = instance._bridged_get_type()
-        
-        remote_method = None
-        
-        # so, jython getattr() will query first the object, then its parent class for a java type, this 
-        # will end up querying the jython type, then java.lang.Class
-        # java.lang.Class does have the rich comparables (__lt__/__gt__/etc) defined, but they appear to 
-        # expect to be called differently (will return an error saying they expected 2 args, got 2 args)
-        # so what we'll do instead is check if the class methods we're looking for appear in the attributes
-        # of the type before we try to get them - if not, raise an exception.
-        # This does lead to a difference in behaviour for ghidra_bridge: currentProgram < currentProgram is a
-        # TypeError/not supported on the bridge end, and False in the ghidra python interpreter. However,
-        # since the java.lang.Class level implementation doesn't seem particularly useful, I don't think
-        # that loses too much.
-        # TODO is there a cleaner way to handle this? Can we push this logic into _bridged_get, or will
-        # it break things there?
-        if self.method_name in remote_type._bridge_attrs:
-            remote_method = remote_type._bridged_get(self.method_name)    
-        elif (self.method_name == "__truediv__") and ("__div__" in remote_type._bridge_attrs):
-            # handle a python2/3 compatibility issue - 3 uses truediv for /, 2 uses div unless you've imported 
-            # __future__.division. Allow falling back to __div__ if __truediv__ requested but not present
-            # TODO pull that out into its own handling class?
-            remote_method = remote_type._bridged_get("__div__")
-            
-        if remote_method is None:
-            raise AttributeError()
-            
-        return functools.partial(remote_method, instance)
-
 class BridgedObject(object):
     """ An object you can only interact with on the opposite side of a bridge """
     _bridge_conn = None
@@ -1130,7 +1138,7 @@ class BridgedObject(object):
                 result = self._bridged_get(attr)
             except BridgeException as be:
                 # unwrap AttributeErrors if they occurred on the other side of the bridge
-                if be.args[1]._bridge_type == "AttributeError":
+                if be.args[1]._bridge_type.endswith("AttributeError"):
                     raise AttributeError(be.args[0])
                 else:
                     # some other cause - just reraise the exception
@@ -1207,10 +1215,6 @@ class BridgedObject(object):
     def __dir__(self):
         return dir(super(type(self))) + (self._bridge_attrs if self._bridge_attrs else [])
 
-# after BridgedObject is defined, update it to include handlers for common class methods 
-for method_name in BRIDGED_CLASS_METHODS:
-    setattr(BridgedObject, method_name, BridgedClassMethod(method_name))
-
 class BridgedCallable(BridgedObject):
     # TODO can we further make BridgedClass a subclass of BridgedCallable? How can we detect? Allow us to pull this class/type hack further away from normal calls
     def __new__(cls, bridge_conn, obj_dict, class_init=None):
@@ -1254,12 +1258,6 @@ class BridgedCallable(BridgedObject):
         """
         return functools.partial(self, instance)
 
-# TODO remove this
-class BridgedIterable(BridgedObject):
-    def __iter__(self):
-        return self._bridged_get("__iter__")()
-
-
 class BridgedIterator(BridgedObject):
     def __next__(self):
         # py2 vs 3 - next vs __next__
@@ -1267,14 +1265,10 @@ class BridgedIterator(BridgedObject):
             return self._bridged_get("__next__" if "__next__" in self._bridge_attrs else "next")()
         except BridgeException as e:
             # we expect the StopIteration exception - check to see if that's what we got, and if so, raise locally
-            if e.args[1]._bridge_type == "StopIteration":
+            if e.args[1]._bridge_type.endswith("StopIteration"):
                 raise StopIteration
             # otherwise, something went bad - reraise
             raise
 
     next = __next__  # handle being run in a py2 environment
-
-
-class BridgedIterableIterator(BridgedIterator, BridgedIterable):
-    """ Common enough that iterables return themselves from __iter__ """
-    pass
+    

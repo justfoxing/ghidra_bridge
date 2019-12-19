@@ -272,10 +272,10 @@ class TestBridge(unittest.TestCase):
         remote_uuid = TestBridge.test_bridge.remote_import("uuid")
         remote_obj = remote_uuid.uuid4()
 
-        self.assertEquals(str(remote_obj._bridged_get_type()),
-                          "<class 'uuid.UUID'>")
-        self.assertEquals(
-            str(remote_obj._bridged_get_type()._bridged_get_type()), "<type 'type'>")
+        self.assertTrue("<class 'uuid.UUID'>', type=type" in str(remote_obj._bridged_get_type()))
+                          
+        self.assertTrue(
+            "<type 'type'>', type=type" in str(remote_obj._bridged_get_type()._bridged_get_type()) )
 
     def test_remote_eval(self):
         self.assertEquals(3, TestBridge.test_bridge.remote_eval("1+2"))
