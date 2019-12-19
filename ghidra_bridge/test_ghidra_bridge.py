@@ -4,6 +4,11 @@ import time
 import ghidra_bridge
 from . import bridge  # just for default server port - TODO fix that up...
 
+# supress linting complaints
+ghidra = None
+currentAddress = None
+getState = None
+state = None
 
 class TestGhidraBridge(unittest.TestCase):
     """ Assumes there's a ghidra bridge server running at DEFAULT_SERVER_PORT """
