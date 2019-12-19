@@ -222,7 +222,8 @@ class GhidraBridge():
         if GHIDRA_BRIDGE_NAMESPACE_TRACK in namespace:
             for key, value in namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK].items():
                 if key in namespace:
-                    if namespace[key] == value:
+                    # we use "is", not ==, because we're checking it's the same object, not just that it matches
+                    if namespace[key] is value:
                         del namespace[key]
         else:
             raise Exception(GHIDRA_BRIDGE_NAMESPACE_TRACK +
