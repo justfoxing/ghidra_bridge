@@ -51,8 +51,10 @@ jobs:
       - run:
           name: Spawn ghidra bridge server and run tests
           command: |
-            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
-            ( tail -f /tmp/script.err & ) | grep -q "ghidra_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
+            pip3 install jfx_bridge
+            python3 -m ghidra_bridge.install_server /tmp/ghidra_bridge/test_server
+            /opt/ghidra/support/analyzeHeadless /tmp TestProject -import /bin/bash -noanalysis -scriptPath /tmp/ghidra_bridge/test_server -preScript ghidra_bridge_server.py >/tmp/script.log 2>/tmp/script.err & # Run the ghidra_bridge_server in a headless ghidra
+            ( tail -f /tmp/script.err & ) | grep -q "_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
             cd /tmp/ghidra_bridge
             mkdir test-reports
             nosetests --with-xunit --xunit-file=/tmp/ghidra_bridge/test-reports/nosetests.xml

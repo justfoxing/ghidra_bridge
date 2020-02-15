@@ -2,7 +2,9 @@ import sys
 import weakref
 import pydoc
 
-from . import bridge
+from jfx_bridge import bridge
+
+from .server.ghidra_bridge_port import DEFAULT_SERVER_PORT
 
 """ Use this list to exclude modules and names loaded by the remote ghidra_bridge side from being loaded into namespaces (they'll 
 still be present in the BridgedObject for the __main__ module. This prevents the ghidra_bridge imported by ghidra_bridge_server 
@@ -22,7 +24,7 @@ def get_listing_panel(tool, ghidra):
 
 
 class GhidraBridge():
-    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=bridge.DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
+    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
         """ Set up a bridge. Default settings connect to the default ghidra bridge server,
 
         If namespace is specified (e.g., locals() or globals()), automatically calls get_flat_api() with that namespace. 
