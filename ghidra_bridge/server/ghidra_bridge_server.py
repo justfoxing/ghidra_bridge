@@ -112,13 +112,21 @@ class GhidraBridgeServer(object):
                     "InteractiveListener failed trying to callback client: " + str(e))
 
     @staticmethod
-    def run_server(server_host=bridge.DEFAULT_HOST, server_port=DEFAULT_SERVER_PORT, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
+    def run_server(server_host=bridge.DEFAULT_HOST, server_port=DEFAULT_SERVER_PORT, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, background=True):
         """ Run a ghidra_bridge_server (forever)
             server_host - what address the server should listen on
             server_port - what port the server should listen on
+            response_timeout - default timeout in seconds before a response is treated as "failed"
+            background - false to run the server in this thread (script popup will stay), true for a new thread (script popup disappears)
         """
-        bridge.BridgeServer(server_host=server_host,
-                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout).run()
+        server = bridge.BridgeServer(server_host=server_host,
+                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout)
+                            
+        if background:
+            server.start()
+            server.logger.info("Server launching in background - will continue to run after launch script finishes...")
+        else:
+            server.run()
 
     @staticmethod
     def run_script_across_ghidra_bridge(script_file, python="python", argstring=""):
@@ -162,5 +170,6 @@ class GhidraBridgeServer(object):
 
 
 if __name__ == "__main__":
+    # legacy version - run the server in the foreground, so we don't break people's expectations
     GhidraBridgeServer.run_server(
-        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT)
+        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, background=False)

@@ -27,11 +27,11 @@ For a better interactive shell like IPython or if you need Python 3 libraries in
 
 1. Open the Ghidra Script Manager.
 2. Select the Bridge folder.
-3. Run the ghidra_bridge_server.py script
+3. Run the ghidra_bridge_server_background.py script (for a clean, no-popups bridge). You can also use ghidra_bridge_server.py if for some reason you want a big script popup in your face the whole time.
 
 ### Headless Analysis Context
 
-You can run Ghidra Bridge as a post analysis script for a headless analysis and then run some further analysis from the client.
+You can run Ghidra Bridge as a post analysis script for a headless analysis and then run some further analysis from the client. Use the ghidra_bridge_server.py (not \_background.py) for this one, so it doesn't exit until you shut the bridge down. 
 ```
 $ghidraRoot/support/analyzeHeadless ghidra-project -import /bin/ls  -scriptPath <install directory for the server scripts> -postscript ghidra_bridge_server.py
 ```
@@ -58,6 +58,16 @@ b = ghidra_bridge.GhidraBridge(namespace=globals()) # creates the bridge and loa
 print(getState().getCurrentAddress().getOffset())
 # ghidra module implicitly loaded at the same time as the flat API
 ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentAddress)
+```
+
+## Shutting Down the Server
+To shutdown the server cleanly, run the ghidra_bridge_server_shutdown.py script from the Bridge folder (if you're running in non-background mode, avoid clicking the "Cancel" button on the script popup, as this will leave the server socket in a bad state, and you'll have to completely close Ghidra to fix it).
+
+Alternatively, you can call remote_shutdown from any connected client.
+```python
+import ghidra_bridge
+b = ghidra_bridge.GhidraBridge(namespace=globals())
+b.bridge.remote_shutdown()
 ```
 
 Security warning
