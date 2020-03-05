@@ -1,6 +1,7 @@
 # Shutdown a running ghidra_bridge server cleanly
 # @author justfoxing
 # @category Bridge
+# @menupath Tools.Ghidra Bridge.Shutdown
 
 from jfx_bridge import bridge
 from ghidra_bridge_port import DEFAULT_SERVER_PORT
