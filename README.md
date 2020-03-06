@@ -19,15 +19,19 @@ pip install ghidra_bridge
 ```
 python -m ghidra_bridge.install_server ~/ghidra_scripts
 ```
+3. (optional) In the Ghidra Script Manager, select the Bridge folder and click the "In Tool" checkbox at the far left for the ghidra_bridge_server_background.py and ghidra_bridge_server_shutdown.py scripts. This will add these scripts as convenient menu items in Tools->Ghidra Bridge. 
 
 ## Start Server
 ### CodeBrowser Context
 
 For a better interactive shell like IPython or if you need Python 3 libraries in your interactive environment you can start the bridge in the context of an interactive GUI session.
 
+1. If you've done step 3 in the install instructions above, click Tools->Ghidra Bridge->Run in Background.
+
+Otherwise:
 1. Open the Ghidra Script Manager.
 2. Select the Bridge folder.
-3. Run the ghidra_bridge_server_background.py script (for a clean, no-popups bridge). You can also use ghidra_bridge_server.py if for some reason you want a big script popup in your face the whole time.
+3. Run the ghidra_bridge_server_background.py script for a clean, no-popups bridge. You can also use ghidra_bridge_server.py if for some reason you want a big script popup in your face the whole time.
 
 ### Headless Analysis Context
 
@@ -61,7 +65,9 @@ ghidra.program.model.data.DataUtilities.isUndefinedData(currentProgram, currentA
 ```
 
 ## Shutting Down the Server
-To shutdown the server cleanly, run the ghidra_bridge_server_shutdown.py script from the Bridge folder (if you're running in non-background mode, avoid clicking the "Cancel" button on the script popup, as this will leave the server socket in a bad state, and you'll have to completely close Ghidra to fix it).
+Warning: if you're running in non-background mode, avoid clicking the "Cancel" button on the script popup, as this will leave the server socket in a bad state, and you'll have to completely close Ghidra to fix it.
+
+To shutdown the server cleanly, if you've done step 3 in the install instructions above, click Tools->Ghidra Bridge->Shutdown. Otherwise, run the ghidra_bridge_server_shutdown.py script from the Bridge folder.
 
 Alternatively, you can call remote_shutdown from any connected client.
 ```python
