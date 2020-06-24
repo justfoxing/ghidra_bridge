@@ -149,7 +149,7 @@ class GhidraBridgeServer(object):
 
         try:
             # work out where we're running the server
-            server_host, server_port = server.bridge.get_server_info()
+            server_host, server_port = server.server.bridge.get_server_info()
 
             print("Running " + script_file)
 
@@ -166,7 +166,7 @@ class GhidraBridgeServer(object):
 
         finally:
             # when we're done with the script, shut down the server
-            server.bridge.shutdown()
+            server.shutdown()
 
 
 if __name__ == "__main__":
