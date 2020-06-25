@@ -37,8 +37,10 @@ Otherwise:
 
 You can run Ghidra Bridge as a post analysis script for a headless analysis and then run some further analysis from the client. Use the ghidra_bridge_server.py (not \_background.py) for this one, so it doesn't exit until you shut the bridge down. 
 ```
-$ghidraRoot/support/analyzeHeadless ghidra-project -import /bin/ls  -scriptPath <install directory for the server scripts> -postscript ghidra_bridge_server.py
+$ghidraRoot/support/analyzeHeadless <path to directory to store project> <name for project> -import <path to file to import>  -scriptPath <install directory for the server scripts> -postscript ghidra_bridge_server.py
 ```
+
+See the analyzeHeadlessREADME.html in Ghidra's support/ directory for more information about how to run the analyzeHeadless command, if required.
 ### pythonRun Context
 
 You can start the bridge in an environment without any program loaded, for example if you want to access some API like the DataTypeManager that doesn't require a program being analyzed
