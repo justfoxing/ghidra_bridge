@@ -120,3 +120,13 @@ class TestGhidraBridge(unittest.TestCase):
             test_address = currentAddress.add(1)
             self.assertFalse(test_address < currentAddress)
             self.assertTrue(test_address > currentAddress)
+            
+    def test_hook_import(self):
+        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, hook_import=True):
+            import ghidra
+            self.assertTrue("ghidra" in str(ghidra))
+            from ghidra.framework.model import ToolListener
+            import docking.widgets.indexedscrollpane.IndexScrollListener
+            import java.math.BigInteger
+            bi = java.math.BigInteger(str(10))
+            

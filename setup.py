@@ -20,6 +20,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        "jfx_bridge"
+        "jfx_bridge>=0.4.0"
     ],
 )

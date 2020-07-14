@@ -58,7 +58,7 @@ jobs:
             ( tail -f /tmp/script.err & ) | grep -q "_bridge.bridge:serving!" # pause until we see the ghidra_bridge_server start logging messages
             python3 -c "import ghidra_bridge; b = ghidra_bridge.GhidraBridge(namespace=globals()); print(getState().getCurrentAddress())" # run a quick test for ghidra_bridge - we do this before nose, because the last nose test shuts down the bridge
             mkdir test-reports
-            nosetests --with-xunit --xunit-file=/tmp/ghidra_bridge/test-reports/nosetests.xml
+            nosetests --with-xunit --xunit-file=/tmp/ghidra_bridge/test-reports/nosetests.xml ghidra_bridge/test_ghidra_bridge.py
             
             
       - store_test_results:

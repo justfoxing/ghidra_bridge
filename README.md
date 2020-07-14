@@ -6,6 +6,20 @@ So Ghidra Bridge is an effort to sidestep that problem - instead of being stuck 
 
 The aim is to be as transparent as possible, so once you're set up, you shouldn't need to know if an object is local or from the remote Ghidra - the bridge should seamlessly handle getting/setting/calling against it.
 
+Table of contents
+======================
+* [How to use for Ghidra](#how-to-use-for-ghidra)
+* [Security warning](#security-warning)
+* [Remote eval](#remote-eval)
+* [Long-running commands](#long-running-commands)
+* [Remote imports](#remote-imports)
+* [Interactive mode](#interactive-mode)
+* [How it works](#how-it-works)
+* [Design principles](#design-principles)
+* [Tested](#tested)
+* [TODO](#todo)
+* [Contributors](#contributors)
+
 How to use for Ghidra
 ======================
 
@@ -113,6 +127,12 @@ Long-running commands
 If you have a particularly slow call in your script, it may hit the response timeout that the bridge uses to make sure the connection hasn't broken. If this happens, you'll see something like `Exception: Didn't receive response <UUID> before timeout`.
 
 There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = ghidra_bridge.GhidraBridge(namespace=globals(), response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
+
+Remote imports
+=====================
+If you want to import modules from the ghidra-side (e.g., ghidra, java, docking namespaces), you have two options.
+* Use remote_import to get a BridgedModule back directly (e.g., `remote_module = b.remote_import("java.math.BigInteger")`). This has the advantage that you have exact control over getting the remote module (and can get remote modules with the same name as local modules) and when it's released, but it does take a little more work.
+* Specify hook_import=True when creating the bridge (e.g., `b = ghidra_bridge.GhidraBridge(namespace=globals(), hook_import=True)`). This will add a hook to the import machinery such that, if nothing else can fill the import, the bridge will try to handle it. This allows you to just use the standard `import ghidra.framework.model.ToolListener` syntax after you've connected the bridge. This has the advantage that it may be a little easier to use (you still have to make sure the imports happen AFTER the bridge is connected), but it doesn't allow you to import remote modules with the same name as local modules (the local imports take precedence) and it places the remote modules in sys.modules as proper imports, so they and the bridge will likely stay loaded until the process terminates. Additionally, multiple bridges with hook_import=True will attempt to resolve imports in the order they were connected, which may not be the behaviour you want.
 
 Interactive mode
 =====================

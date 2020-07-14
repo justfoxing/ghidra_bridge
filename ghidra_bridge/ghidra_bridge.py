@@ -24,7 +24,7 @@ def get_listing_panel(tool, ghidra):
 
 
 class GhidraBridge():
-    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT):
+    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, hook_import=False):
         """ Set up a bridge. Default settings connect to the default ghidra bridge server,
 
         If namespace is specified (e.g., locals() or globals()), automatically calls get_flat_api() with that namespace. 
@@ -37,9 +37,11 @@ class GhidraBridge():
         behaviour in the Ghidra Jython shell - current*/getState() reflect the current values in the GUI
 
         response_timeout is how long to wait for a response before throwing an exception, in seconds
+        
+        Set hook_import to True to add a hook to the import system to allowing importing remote modules
         """
         self.bridge = bridge.BridgeClient(
-            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout)
+            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout, hook_import=hook_import)
 
         if interactive_mode is None:
             # from https://stackoverflow.com/questions/2356399/tell-if-python-is-in-interactive-mode, sys.ps1 only present in interactive interpreters
