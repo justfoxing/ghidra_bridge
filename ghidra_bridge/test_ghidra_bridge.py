@@ -130,3 +130,14 @@ class TestGhidraBridge(unittest.TestCase):
             import java.math.BigInteger
             bi = java.math.BigInteger(str(10))
             
+    def test_readme_remote_eval_example(self):
+        """ Test the example from the readme """
+        b = ghidra_bridge.GhidraBridge(namespace=globals())
+        func = currentProgram.getFunctionManager().getFunctions(True).next()
+        mnemonics = b.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
+
+    def test_readme_remote_eval_example_backcompat(self):
+        """ Test the example from the readme, in its old version, before we changed GhidraBridge to inherit BridgeClient """
+        b = ghidra_bridge.GhidraBridge(namespace=globals())
+        func = currentProgram.getFunctionManager().getFunctions(True).next()
+        mnemonics = b.bridge.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)

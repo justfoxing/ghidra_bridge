@@ -89,7 +89,7 @@ Alternatively, you can call remote_shutdown from any connected client.
 ```python
 import ghidra_bridge
 b = ghidra_bridge.GhidraBridge(namespace=globals())
-b.bridge.remote_shutdown()
+b.remote_shutdown()
 ```
 
 Security warning
@@ -102,13 +102,13 @@ By default, the Ghidra Bridge server only listens on localhost to slightly reduc
 
 Remote eval
 =====================
-Ghidra Bridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for function in currentProgram.getFunctionManager().getFunctions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the bridge.remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
+Ghidra Bridge is designed to be transparent, to allow easy porting of non-bridged scripts without too many changes. However, if you're happy to make changes, and you run into slowdowns caused by running lots of remote queries (e.g., something like `for function in currentProgram.getFunctionManager().getFunctions(): doSomething()` can be quite slow with a large number of functions as each function will result in a message across the bridge), you can make use of the remote_eval() function to ask for the result to be evaluated on the bridge server all at once, which will require only a single message roundtrip.
 
 The following example demonstrates getting a list of all the names of all the functions in a binary:
 ```python
 import ghidra_bridge 
 b = ghidra_bridge.GhidraBridge(namespace=globals())
-name_list = b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]")
+name_list = b.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]")
 ```
 
 If your evaluation is going to take some time, you might need to use the timeout_override argument to increase how long the bridge will wait before deciding things have gone wrong.
@@ -118,7 +118,7 @@ If you need to supply an argument for the remote evaluation, you can provide arb
 import ghidra_bridge 
 b = ghidra_bridge.GhidraBridge(namespace=globals())
 func = currentProgram.getFunctionManager().getFunctions(True).next()
-mnemonics = b.bridge.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
+mnemonics = b.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
 ```
 As a simplification, note also that the evaluation context has the same globals loaded into the \_\_main\_\_ of the script that started the server - in the case of the Ghidra Bridge server, these include the flat API and values such as the currentProgram.
 
@@ -126,7 +126,7 @@ Long-running commands
 =====================
 If you have a particularly slow call in your script, it may hit the response timeout that the bridge uses to make sure the connection hasn't broken. If this happens, you'll see something like `Exception: Didn't receive response <UUID> before timeout`.
 
-There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = ghidra_bridge.GhidraBridge(namespace=globals(), response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.bridge.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
+There are two options to increase the timeout. When creating the bridge, you can set a timeout value in seconds with the response_timeout argument (e.g., `b = ghidra_bridge.GhidraBridge(namespace=globals(), response_timeout=20)`) which will apply to all commands run across the bridge. Alternatively, if you just want to change the timeout for one command, you can use remote_eval as mentioned above, with the timeout_override argument (e.g., `b.remote_eval("[ f.getName() for f in currentProgram.getFunctionManager().getFunctions(True)]", timeout_override=20)`). If you use the value -1 for either of these arguments, the response timeout will be disabled and the bridge will wait forever for your response to come back - note that this can cause your script to hang if the bridge runs into problems.
 
 Remote imports
 =====================

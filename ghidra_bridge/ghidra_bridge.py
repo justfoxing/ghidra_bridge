@@ -23,7 +23,7 @@ def get_listing_panel(tool, ghidra):
     return cvs.getListingPanel()
 
 
-class GhidraBridge():
+class GhidraBridge(bridge.BridgeClient):
     def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, hook_import=False):
         """ Set up a bridge. Default settings connect to the default ghidra bridge server,
 
@@ -40,7 +40,7 @@ class GhidraBridge():
         
         Set hook_import to True to add a hook to the import system to allowing importing remote modules
         """
-        self.bridge = bridge.BridgeClient(
+        super().__init__(
             connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout, hook_import=hook_import)
 
         if interactive_mode is None:
@@ -69,7 +69,7 @@ class GhidraBridge():
         ghidra api and java namespace for you for free.
         """
 
-        remote_main = self.bridge.remote_import("__main__")
+        remote_main = self.remote_import("__main__")
 
         if namespace is not None:
             # we're going to need the all of __main__, so get it all in one hit
@@ -79,7 +79,7 @@ class GhidraBridge():
             # if we're in headless mode (indicated by no state attribute for pythonRun or no tool for ghidra headless), we can't actually do interactive mode - we don't have access to a PluginTool
             if not hasattr(remote_main, 'state') or remote_main.state.getTool() is None:
                 self.interactive_mode = False
-                self.bridge.logger.warning(
+                self.logger.warning(
                     "Disabling interactive mode - not supported when running against a headless Ghidra")
             else:
                 # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
@@ -237,13 +237,13 @@ class GhidraBridge():
         """ get the ghidra api - `ghidra = bridge.get_ghidra_api()` equivalent to doing `import ghidra` in your script.
             Note that the module returned from get_flat_api() will also contain the ghidra module, so you may not need to call this.
         """
-        return self.bridge.remote_import("ghidra")
+        return self.remote_import("ghidra")
 
     def get_java_api(self):
         """ get the java namespace - `java = bridge.get_java_api()` equivalent to doing `import java` in your script.
             Note that the module returned from get_flat_api() will also contain the java module, so you may not need to call this.
         """
-        return self.bridge.remote_import("java")
+        return self.remote_import("java")
 
     def __enter__(self):
         return self
