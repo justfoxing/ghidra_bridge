@@ -140,4 +140,16 @@ class TestGhidraBridge(unittest.TestCase):
         """ Test the example from the readme, in its old version, before we changed GhidraBridge to inherit BridgeClient """
         b = ghidra_bridge.GhidraBridge(namespace=globals())
         func = currentProgram.getFunctionManager().getFunctions(True).next()
-        mnemonics = b.bridge.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
+        mnemonics = b.bridge.remote_eval(
+            "[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]",
+            f=func,
+        )
+
+    def test_array_creation_without_forced_unicode(self):
+        """ Check that we can instatiate an array.array without the error about it wanting a plain string as the first argument. Depends on jfx_bridge 0.8.0 """
+        b = ghidra_bridge.GhidraBridge(namespace=globals())
+        array = b.remote_import("array")
+
+        test = array.array("b", b"\0" * 10)
+
+        self.assertIsNotNone(test)
