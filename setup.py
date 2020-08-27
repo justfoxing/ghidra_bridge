@@ -19,7 +19,5 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=[
-        "jfx_bridge>0.4.2"
-    ],
+    install_requires=["jfx_bridge>=0.8.0"],
 )
