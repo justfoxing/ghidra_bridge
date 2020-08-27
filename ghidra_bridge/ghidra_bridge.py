@@ -11,8 +11,14 @@ still be present in the BridgedObject for the __main__ module. This prevents the
 being loaded over the local ghidra_bridge and causing issues. You probably only want this for stuff imported by the ghidra_bridge_server
 script that might conflict on the local side (or which is totally unnecessary on the local side, like GhidraBridgeServer).
 """
-EXCLUDED_REMOTE_IMPORTS = ["logging", "subprocess", "sys",
-                           "ghidra_bridge", "bridge", "GhidraBridgeServer"]
+EXCLUDED_REMOTE_IMPORTS = [
+    "logging",
+    "subprocess",
+    "sys",
+    "ghidra_bridge",
+    "bridge",
+    "GhidraBridgeServer",
+]
 
 GHIDRA_BRIDGE_NAMESPACE_TRACK = "__ghidra_bridge_namespace_track__"
 
@@ -24,7 +30,18 @@ def get_listing_panel(tool, ghidra):
 
 
 class GhidraBridge(bridge.BridgeClient):
-    def __init__(self, connect_to_host=bridge.DEFAULT_HOST, connect_to_port=DEFAULT_SERVER_PORT, loglevel=None, namespace=None, interactive_mode=None, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, hook_import=False, record_stats=False, **kwargs):
+    def __init__(
+        self,
+        connect_to_host=bridge.DEFAULT_HOST,
+        connect_to_port=DEFAULT_SERVER_PORT,
+        loglevel=None,
+        namespace=None,
+        interactive_mode=None,
+        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
+        hook_import=False,
+        record_stats=False,
+        **kwargs
+    ):
         """ Set up a bridge. Default settings connect to the default ghidra bridge server,
 
         If namespace is specified (e.g., locals() or globals()), automatically calls get_flat_api() with that namespace. 
@@ -43,11 +60,18 @@ class GhidraBridge(bridge.BridgeClient):
         Set record_stats to True to record statistics about the bridge to help improve performance. Get the stats with the get_stats() function
         """
         super().__init__(
-            connect_to_host=connect_to_host, connect_to_port=connect_to_port, loglevel=loglevel, response_timeout=response_timeout, hook_import=hook_import, record_stats=record_stats, **kwargs)
+            connect_to_host=connect_to_host,
+            connect_to_port=connect_to_port,
+            loglevel=loglevel,
+            response_timeout=response_timeout,
+            hook_import=hook_import,
+            record_stats=record_stats,
+            **kwargs
+        )
 
         if interactive_mode is None:
             # from https://stackoverflow.com/questions/2356399/tell-if-python-is-in-interactive-mode, sys.ps1 only present in interactive interpreters
-            interactive_mode = bool(getattr(sys, 'ps1', sys.flags.interactive))
+            interactive_mode = bool(getattr(sys, "ps1", sys.flags.interactive))
         self.interactive_mode = interactive_mode
         self.interactive_listener = None
 
@@ -57,7 +81,8 @@ class GhidraBridge(bridge.BridgeClient):
         if namespace is not None:
             if connect_to_host is None or connect_to_port is None:
                 raise Exception(
-                    "Can't get_flat_api for the namespace if connect_to_host/port are none - need a server!")
+                    "Can't get_flat_api for the namespace if connect_to_host/port are none - need a server!"
+                )
 
             # track the namespace we loaded with - if we're part of an __enter__/__exit__ setup, we'll use it to automatically unload the flat api
             self.namespace = namespace
@@ -79,25 +104,28 @@ class GhidraBridge(bridge.BridgeClient):
 
         if self.interactive_mode:
             # if we're in headless mode (indicated by no state attribute for pythonRun or no tool for ghidra headless), we can't actually do interactive mode - we don't have access to a PluginTool
-            if not hasattr(remote_main, 'state') or remote_main.state.getTool() is None:
+            if not hasattr(remote_main, "state") or remote_main.state.getTool() is None:
                 self.interactive_mode = False
                 self.logger.warning(
-                    "Disabling interactive mode - not supported when running against a headless Ghidra")
+                    "Disabling interactive mode - not supported when running against a headless Ghidra"
+                )
             else:
                 # first, manually update all the current* values (this allows us to get the latest values, instead of what they were when the server started
                 tool = remote_main.state.getTool()  # note: tool shouldn't change
                 listing_panel = get_listing_panel(tool, remote_main.ghidra)
                 locn = listing_panel.getProgramLocation()
                 # set the values as overrides in the bridged object - this prevents them from being changed in the remote object
+                remote_main._bridge_set_override("currentAddress", locn.getAddress())
                 remote_main._bridge_set_override(
-                    "currentAddress", locn.getAddress())
-                remote_main._bridge_set_override(
-                    "currentProgram", listing_panel.getProgram())
+                    "currentProgram", listing_panel.getProgram()
+                )
                 remote_main._bridge_set_override("currentLocation", locn)
                 remote_main._bridge_set_override(
-                    "currentSelection", listing_panel.getProgramSelection())
+                    "currentSelection", listing_panel.getProgramSelection()
+                )
                 remote_main._bridge_set_override(
-                    "currentHighlight", listing_panel.getProgramHighlight())
+                    "currentHighlight", listing_panel.getProgramHighlight()
+                )
 
                 # next, keep a reference to this module for updating these addresses
                 self.flat_api_modules_list.append(weakref.ref(remote_main))
@@ -110,20 +138,38 @@ class GhidraBridge(bridge.BridgeClient):
 
                         This avoids resetting the GUI to the original values in the remote getState
                     """
-                    return remote_main.ghidra.app.script.GhidraState(tool, tool.getProject(), remote_main.currentProgram, remote_main.currentLocation, remote_main.currentSelection, remote_main.currentHighlight)
+                    return remote_main.ghidra.app.script.GhidraState(
+                        tool,
+                        tool.getProject(),
+                        remote_main.currentProgram,
+                        remote_main.currentLocation,
+                        remote_main.currentSelection,
+                        remote_main.currentHighlight,
+                    )
+
                 remote_main._bridge_set_override("getState", getState_fix)
 
                 # finally, install a listener for updates from the GUI events
                 if self.interactive_listener is None:
-                    def update_vars(currentProgram=None, currentLocation=None, currentSelection=None, currentHighlight=None):
+
+                    def update_vars(
+                        currentProgram=None,
+                        currentLocation=None,
+                        currentSelection=None,
+                        currentHighlight=None,
+                    ):
                         """ For all the namespaces and modules we've returned, update the current* variables that have changed
                         """
                         # clear out any dead references
                         self.flat_api_modules_list = [
-                            module for module in self.flat_api_modules_list if module() is not None]
+                            module
+                            for module in self.flat_api_modules_list
+                            if module() is not None
+                        ]
 
                         update_list = [
-                            module() for module in self.flat_api_modules_list]
+                            module() for module in self.flat_api_modules_list
+                        ]
                         for update in update_list:
                             # possible that a module might have been removed between the clear out and preparing the update list
                             if update is not None:
@@ -134,34 +180,60 @@ class GhidraBridge(bridge.BridgeClient):
                                     update.currentLocation = currentLocation
                                     update.currentAddress = currentLocation.getAddress()
                                 if currentSelection is not None:
-                                    update.currentSelection = currentSelection if not currentSelection.isEmpty() else None
+                                    update.currentSelection = (
+                                        currentSelection
+                                        if not currentSelection.isEmpty()
+                                        else None
+                                    )
                                 if currentHighlight is not None:
-                                    update.currentHighlight = currentHighlight if not currentHighlight.isEmpty() else None
+                                    update.currentHighlight = (
+                                        currentHighlight
+                                        if not currentHighlight.isEmpty()
+                                        else None
+                                    )
 
                         # repeat the same for the namespace dictionaries, but also make sure we update the tracker so we know what to remove later
                         for update_dict in self.namespace_list:
                             if currentProgram is not None:
                                 update_dict["currentProgram"] = currentProgram
-                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentProgram"] = update_dict["currentProgram"]
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                                    "currentProgram"
+                                ] = update_dict["currentProgram"]
                             if currentLocation is not None:
                                 # match the order of updates in GhidraScript - location before address
                                 update_dict["currentLocation"] = currentLocation
-                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentLocation"] = update_dict["currentLocation"]
-                                update_dict["currentAddress"] = currentLocation.getAddress(
-                                )
-                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentAddress"] = update_dict["currentAddress"]
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                                    "currentLocation"
+                                ] = update_dict["currentLocation"]
+                                update_dict[
+                                    "currentAddress"
+                                ] = currentLocation.getAddress()
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                                    "currentAddress"
+                                ] = update_dict["currentAddress"]
                             if currentSelection is not None:
-                                update_dict["currentSelection"] = currentSelection if not currentSelection.isEmpty(
-                                ) else None
-                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentSelection"] = update_dict["currentSelection"]
+                                update_dict["currentSelection"] = (
+                                    currentSelection
+                                    if not currentSelection.isEmpty()
+                                    else None
+                                )
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                                    "currentSelection"
+                                ] = update_dict["currentSelection"]
                             if currentHighlight is not None:
-                                update_dict["currentHighlight"] = currentHighlight if not currentHighlight.isEmpty(
-                                ) else None
-                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK]["currentHighlight"] = update_dict["currentHighlight"]
+                                update_dict["currentHighlight"] = (
+                                    currentHighlight
+                                    if not currentHighlight.isEmpty()
+                                    else None
+                                )
+                                update_dict[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                                    "currentHighlight"
+                                ] = update_dict["currentHighlight"]
 
                     # create the interactive listener to call our update_vars function (InteractiveListener defined in the GhidraBridgeServer class)
                     self.interactive_listener = remote_main.GhidraBridgeServer.InteractiveListener(
-                        remote_main.state.getTool(), update_vars)
+                        remote_main.state.getTool(), update_vars
+                    )
 
         if namespace is not None:
             # add a special var to the namespace to track what we add, so we can remove it easily later
@@ -169,8 +241,14 @@ class GhidraBridge(bridge.BridgeClient):
 
             # load in all the attrs from remote main, skipping the double underscores and avoiding overloading our own ghidra_bridge (and similar modules)
             try:
-                for attr in set(remote_main._bridge_attrs + list(remote_main._bridge_overrides.keys())):
-                    if not attr.startswith("__") and attr not in EXCLUDED_REMOTE_IMPORTS:
+                for attr in set(
+                    remote_main._bridge_attrs
+                    + list(remote_main._bridge_overrides.keys())
+                ):
+                    if (
+                        not attr.startswith("__")
+                        and attr not in EXCLUDED_REMOTE_IMPORTS
+                    ):
                         remote_attr = getattr(remote_main, attr)
                         namespace[attr] = remote_attr
                         # record what we added to the namespace
@@ -178,7 +256,9 @@ class GhidraBridge(bridge.BridgeClient):
 
                 # overload isinstance with bridged_isinstance, so checking bridged objects are of bridged types will just work
                 namespace["isinstance"] = bridge.bridged_isinstance
-                namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK]["isinstance"] = bridge.bridged_isinstance
+                namespace[GHIDRA_BRIDGE_NAMESPACE_TRACK][
+                    "isinstance"
+                ] = bridge.bridged_isinstance
 
                 # overwrite help with our own function for using ghidra's help
                 def ghidra_help(param=None):
@@ -195,8 +275,7 @@ class GhidraBridge(bridge.BridgeClient):
                         builtin_help(param)
                     else:
                         # make a remote help call - either param is bridged, or no param (in which case, we'll get the default help for the GhidraScript API)
-                        help_output = remote_main.GhidraBridgeServer.ghidra_help(
-                            param)
+                        help_output = remote_main.GhidraBridgeServer.ghidra_help(param)
                         pydoc.pager(help_output)
 
                 namespace["help"] = ghidra_help
@@ -219,7 +298,8 @@ class GhidraBridge(bridge.BridgeClient):
         if namespace is None:
             if self.namespace is None:
                 raise Exception(
-                    "Bridge wasn't initialized with a namespace - need to specify the namespace you want to unload from")
+                    "Bridge wasn't initialized with a namespace - need to specify the namespace you want to unload from"
+                )
             namespace = self.namespace
 
         if self.interactive_mode and namespace in self.namespace_list:
@@ -232,8 +312,10 @@ class GhidraBridge(bridge.BridgeClient):
                     if namespace[key] is value:
                         del namespace[key]
         else:
-            raise Exception(GHIDRA_BRIDGE_NAMESPACE_TRACK +
-                            " not present in namespace - get_flat_api() didn't load into this namespace")
+            raise Exception(
+                GHIDRA_BRIDGE_NAMESPACE_TRACK
+                + " not present in namespace - get_flat_api() didn't load into this namespace"
+            )
 
     def get_ghidra_api(self):
         """ get the ghidra api - `ghidra = bridge.get_ghidra_api()` equivalent to doing `import ghidra` in your script.

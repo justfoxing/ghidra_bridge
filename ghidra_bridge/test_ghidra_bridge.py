@@ -11,10 +11,15 @@ class TestGhidraBridge(unittest.TestCase):
     def test_interactive_currentAddress(self):
         """ confirm that the current address (and ideally, the other current* vars - TODO) are updated when
             interactive mode is enabled """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, interactive_mode=True):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(),
+            connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT,
+            interactive_mode=True,
+        ):
             if state.getTool() is None:
                 self.skipTest(
-                    "Interactive mode tests not supported against headless (no tool)")
+                    "Interactive mode tests not supported against headless (no tool)"
+                )
             else:
                 # record the current address as an int
                 curr_addr = currentAddress.getOffset()
@@ -30,10 +35,15 @@ class TestGhidraBridge(unittest.TestCase):
 
     def test_interactive_getState_fix(self):
         """ confirm that getState is updated, and doesn't cause a reset to old values when interactive mode is enabled """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, interactive_mode=True):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(),
+            connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT,
+            interactive_mode=True,
+        ):
             if state.getTool() is None:
                 self.skipTest(
-                    "Interactive mode tests not supported against headless (no tool)")
+                    "Interactive mode tests not supported against headless (no tool)"
+                )
             else:
                 # record the current address as an int
                 curr_addr = currentAddress.getOffset()
@@ -48,21 +58,31 @@ class TestGhidraBridge(unittest.TestCase):
                 self.assertNotEqual(curr_addr, currentAddress.getOffset())
 
                 # check that the state address matches
-                self.assertEqual(currentAddress.getOffset(),
-                                 new_state.getCurrentAddress().getOffset())
+                self.assertEqual(
+                    currentAddress.getOffset(),
+                    new_state.getCurrentAddress().getOffset(),
+                )
 
     def test_non_interactive_currentAddress(self):
         """ confirm that the current address (and ideally, the other current* vars - TODO) are NOT updated when
             interactive mode is disabled """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, interactive_mode=False):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(),
+            connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT,
+            interactive_mode=False,
+        ):
             if state.getTool() is None:
                 self.skipTest(
-                    "This test isn't supported against headless/no tool ghidra, because of how we try to get the most up to date addresses")
+                    "This test isn't supported against headless/no tool ghidra, because of how we try to get the most up to date addresses"
+                )
             else:
                 listing_panel = ghidra_bridge.ghidra_bridge.get_listing_panel(
-                    state.getTool(), ghidra)
+                    state.getTool(), ghidra
+                )
                 # get the actual current address
-                actual_current_addr = listing_panel.getProgramLocation().getAddress().getOffset()
+                actual_current_addr = (
+                    listing_panel.getProgramLocation().getAddress().getOffset()
+                )
 
                 # record the "current" address as an int
                 curr_addr = currentAddress.getOffset()
@@ -71,22 +91,29 @@ class TestGhidraBridge(unittest.TestCase):
                 state.setCurrentAddress(currentAddress.add(0x10))
 
                 # check the address has changed
-                new_actual_current_addr = listing_panel.getProgramLocation().getAddress().getOffset()
-                self.assertNotEqual(actual_current_addr,
-                                    new_actual_current_addr)
+                new_actual_current_addr = (
+                    listing_panel.getProgramLocation().getAddress().getOffset()
+                )
+                self.assertNotEqual(actual_current_addr, new_actual_current_addr)
 
                 # check the currentAddress hasn't changed
                 self.assertEqual(curr_addr, currentAddress.getOffset())
 
     def test_namespace_cleanup(self):
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT
+        ):
             self.assertTrue("currentAddress" in globals())
 
         self.assertTrue("currentAddress" not in globals())
 
     def test_namespace_cleanup_with_interactive(self):
         """ check that we can still remove if the values we add have been updated by interactive mode """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, interactive_mode=True):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(),
+            connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT,
+            interactive_mode=True,
+        ):
             self.assertTrue("currentAddress" in globals())
 
             # cause currentAddress to change
@@ -101,40 +128,58 @@ class TestGhidraBridge(unittest.TestCase):
 
     def test_isinstance_fix(self):
         """ check that we automatically fix up isinstance when using namespace, so we can isinstance bridged objects """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT):
-            self.assertTrue(isinstance(
-                currentAddress, ghidra.program.model.address.Address))
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT
+        ):
+            self.assertTrue(
+                isinstance(currentAddress, ghidra.program.model.address.Address)
+            )
 
     def test_str_javapackage(self):
         """ Test that we can now call str on javapackage objects """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT
+        ):
             self.assertTrue("java package ghidra" in str(ghidra))
 
     def test_memory_callable_iterable(self):
         """ Test that we handle the ghidra.program.model.mem.Memory class - it's callable and iterable """
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT
+        ):
             self.assertNotEqual(None, ghidra.program.model.mem.Memory)
 
     def test_address_comparison(self):
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT
+        ):
             test_address = currentAddress.add(1)
             self.assertFalse(test_address < currentAddress)
             self.assertTrue(test_address > currentAddress)
-            
+
     def test_hook_import(self):
-        with ghidra_bridge.GhidraBridge(namespace=globals(), connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT, hook_import=True):
+        with ghidra_bridge.GhidraBridge(
+            namespace=globals(),
+            connect_to_port=ghidra_bridge_port.DEFAULT_SERVER_PORT,
+            hook_import=True,
+        ):
             import ghidra
+
             self.assertTrue("ghidra" in str(ghidra))
             from ghidra.framework.model import ToolListener
             import docking.widgets.indexedscrollpane.IndexScrollListener
             import java.math.BigInteger
+
             bi = java.math.BigInteger(str(10))
-            
+
     def test_readme_remote_eval_example(self):
         """ Test the example from the readme """
         b = ghidra_bridge.GhidraBridge(namespace=globals())
         func = currentProgram.getFunctionManager().getFunctions(True).next()
-        mnemonics = b.remote_eval("[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]", f=func)
+        mnemonics = b.remote_eval(
+            "[ i.getMnemonicString() for i in currentProgram.getListing().getInstructions(f.getBody(), True)]",
+            f=func,
+        )
 
     def test_readme_remote_eval_example_backcompat(self):
         """ Test the example from the readme, in its old version, before we changed GhidraBridge to inherit BridgeClient """

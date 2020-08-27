@@ -26,6 +26,7 @@ class GhidraBridgeServer(object):
             Not multithreading aware, it'll just capture whatever is printed from the moment it hooks to the moment 
             it stops.
         """
+
         output = None
         old_stdout = None
 
@@ -72,6 +73,7 @@ class GhidraBridgeServer(object):
             let it propagate exceptions up into Ghidra, the GUI gets unhappy and can stop
             sending tool events out 
         """
+
         tool = None
         callback_fn = None
 
@@ -92,39 +94,58 @@ class GhidraBridgeServer(object):
             """ Called by the ToolListener interface """
             try:
                 self.callback_fn._bridge_conn.logger.debug(
-                    "InteractiveListener got event: " + str(plugin_event))
+                    "InteractiveListener got event: " + str(plugin_event)
+                )
 
                 event_name = plugin_event.getEventName()
                 if "Location" in event_name:
-                    self.callback_fn(currentProgram=plugin_event.getProgram(
-                    ), currentLocation=plugin_event.getLocation())
+                    self.callback_fn(
+                        currentProgram=plugin_event.getProgram(),
+                        currentLocation=plugin_event.getLocation(),
+                    )
                 elif "Selection" in event_name:
-                    self.callback_fn(currentProgram=plugin_event.getProgram(
-                    ), currentSelection=plugin_event.getSelection())
+                    self.callback_fn(
+                        currentProgram=plugin_event.getProgram(),
+                        currentSelection=plugin_event.getSelection(),
+                    )
                 elif "Highlight" in event_name:
-                    self.callback_fn(currentProgram=plugin_event.getProgram(
-                    ), currentHighlight=plugin_event.getHighlight())
+                    self.callback_fn(
+                        currentProgram=plugin_event.getProgram(),
+                        currentHighlight=plugin_event.getHighlight(),
+                    )
             except Exception as e:
                 # any exception, we just want to bail and shut down the listener.
                 # most likely case is the bridge connection has gone down.
                 self.stop_listening()
                 self.callback_fn._bridge_conn.logger.error(
-                    "InteractiveListener failed trying to callback client: " + str(e))
+                    "InteractiveListener failed trying to callback client: " + str(e)
+                )
 
     @staticmethod
-    def run_server(server_host=bridge.DEFAULT_HOST, server_port=DEFAULT_SERVER_PORT, response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, background=True):
+    def run_server(
+        server_host=bridge.DEFAULT_HOST,
+        server_port=DEFAULT_SERVER_PORT,
+        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT,
+        background=True,
+    ):
         """ Run a ghidra_bridge_server (forever)
             server_host - what address the server should listen on
             server_port - what port the server should listen on
             response_timeout - default timeout in seconds before a response is treated as "failed"
             background - false to run the server in this thread (script popup will stay), true for a new thread (script popup disappears)
         """
-        server = bridge.BridgeServer(server_host=server_host,
-                            server_port=server_port, loglevel=logging.INFO, response_timeout=response_timeout)
-                            
+        server = bridge.BridgeServer(
+            server_host=server_host,
+            server_port=server_port,
+            loglevel=logging.INFO,
+            response_timeout=response_timeout,
+        )
+
         if background:
             server.start()
-            server.logger.info("Server launching in background - will continue to run after launch script finishes...")
+            server.logger.info(
+                "Server launching in background - will continue to run after launch script finishes..."
+            )
         else:
             server.run()
 
@@ -143,7 +164,8 @@ class GhidraBridgeServer(object):
 
         # spawn a ghidra bridge server - use server port 0 to pick a random port
         server = bridge.BridgeServer(
-            server_host="127.0.0.1", server_port=0, loglevel=logging.INFO)
+            server_host="127.0.0.1", server_port=0, loglevel=logging.INFO
+        )
         # start it running in a background thread
         server.start()
 
@@ -156,8 +178,17 @@ class GhidraBridgeServer(object):
             # spawn an external python process to run against it
 
             try:
-                output = subprocess.check_output("{python} {script} --connect_to_host={host} --connect_to_port={port} {argstring}".format(
-                    python=python, script=script_file, host=server_host, port=server_port, argstring=argstring), stderr=subprocess.STDOUT, shell=True)
+                output = subprocess.check_output(
+                    "{python} {script} --connect_to_host={host} --connect_to_port={port} {argstring}".format(
+                        python=python,
+                        script=script_file,
+                        host=server_host,
+                        port=server_port,
+                        argstring=argstring,
+                    ),
+                    stderr=subprocess.STDOUT,
+                    shell=True,
+                )
                 print(output)
             except subprocess.CalledProcessError as exc:
                 print("Failed ({}):{}".format(exc.returncode, exc.output))
@@ -172,4 +203,6 @@ class GhidraBridgeServer(object):
 if __name__ == "__main__":
     # legacy version - run the server in the foreground, so we don't break people's expectations
     GhidraBridgeServer.run_server(
-        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, background=False)
+        response_timeout=bridge.DEFAULT_RESPONSE_TIMEOUT, background=False
+    )
+
